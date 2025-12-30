@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Panic Buttons</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"></div>
+    <div>
+      <div class="brandTitle">Panic Buttons</div>
+      <div class="brandSub" id="subLine">—</div>
+    </div>
+  </div>
+  <button id="finalizeBtn" class="btn ghost">Finalize</button>
+</header>
+
+<main class="main">
+
+  <section class="panel stage" id="stage">
+    <div class="hud">
+      <div class="pill" id="hudDate"></div>
+      <div class="pill" id="hudWake"></div>
+      <div class="pill" id="hudTaps"></div>
+      <div class="pill" id="hudDayIdx"></div>
+    </div>
+
+    <div class="grid">
+      <button class="panic blue" data-c="mind"></button>
+      <button class="panic red" data-c="body"></button>
+      <button class="panic green" data-c="food"></button>
+      <button class="panic white" data-c="rest"></button>
+      <button class="panic black" data-c="bad"></button>
+      <button class="panic yellow" data-c="deep"></button>
+      <button class="panic pink" data-c="cult"></button>
+    </div>
+
+    <div class="micro">
+      <span>Paina väriä · long-press = undo</span>
+      <span>No names · No menus</span>
+    </div>
+  </section>
+
+  <section class="panel holoPanel">
+    <div class="holoHead">
+      <div class="holoTitle">Hologram</div>
+      <div class="holoMeta" id="holoMeta"></div>
+    </div>
+    <canvas id="holoCanvas"></canvas>
+    <div class="jarvis" id="jarvisLine"></div>
+  </section>
+
+  <section class="panel calendarPanel">
+    <div class="holoHead">
+      <div class="holoTitle" id="calTitle"></div>
+      <div class="holoMeta">Monthly footprint</div>
+    </div>
+    <div id="calendarGrid" class="calendarGrid"></div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
