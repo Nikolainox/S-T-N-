@@ -2,7 +2,7 @@
 <html lang="fi">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Panic Buttons</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
@@ -16,12 +16,12 @@
       <div class="brandSub" id="subLine">—</div>
     </div>
   </div>
-  <button id="finalizeBtn" class="btn ghost">Finalize</button>
+  <button id="finalizeBtn" class="btn">Finalize</button>
 </header>
 
 <main class="main">
 
-  <section class="panel stage" id="stage">
+  <section class="panel">
     <div class="hud">
       <div class="pill" id="hudDate"></div>
       <div class="pill" id="hudWake"></div>
@@ -38,33 +38,19 @@
       <button class="panic yellow" data-c="deep"></button>
       <button class="panic pink" data-c="cult"></button>
     </div>
-
-    <div class="micro">
-      <span>Paina väriä · long-press = undo</span>
-      <span>No names · No menus</span>
-    </div>
   </section>
 
-  <section class="panel holoPanel">
-    <div class="holoHead">
-      <div class="holoTitle">Hologram</div>
-      <div class="holoMeta" id="holoMeta"></div>
-    </div>
+  <section class="panel">
     <canvas id="holoCanvas"></canvas>
     <div class="jarvis" id="jarvisLine"></div>
   </section>
 
-  <section class="panel calendarPanel">
-    <div class="holoHead">
-      <div class="holoTitle" id="calTitle"></div>
-      <div class="holoMeta">Monthly footprint</div>
-    </div>
-    <div id="calendarGrid" class="calendarGrid"></div>
+  <section class="panel">
+    <div class="calendarGrid" id="calendarGrid"></div>
   </section>
 
 </main>
 
-<div id="toast" class="toast"></div>
 <script src="app.js"></script>
 </body>
 </html>
