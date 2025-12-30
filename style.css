@@ -1,0 +1,133 @@
+:root{
+  --bg:#060911;
+  --panel:#0b0f17;
+  --ink:#eaf0ff;
+  --line:rgba(94,231,255,.12);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:-apple-system,system-ui;
+  background:radial-gradient(circle at top,#101827,#060911 60%);
+  color:var(--ink);
+}
+
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px;
+  background:rgba(6,9,17,.85);
+  backdrop-filter:blur(12px);
+}
+
+.brand{display:flex;gap:10px;align-items:center}
+.logo{
+  width:36px;height:36px;border-radius:12px;
+  background:#5ee7ff;
+  box-shadow:0 0 20px #5ee7ff55;
+}
+.brandTitle{font-weight:900}
+.brandSub{font-size:12px;opacity:.6}
+
+.btn{
+  border-radius:999px;
+  padding:10px 16px;
+  background:#111827;
+  border:1px solid var(--line);
+  color:var(--ink);
+  font-weight:800;
+}
+
+.main{padding:14px;max-width:820px;margin:auto}
+
+.panel{
+  background:linear-gradient(180deg,#0e1422,#0a0f1b);
+  border:1px solid var(--line);
+  border-radius:26px;
+  padding:14px;
+  margin-bottom:14px;
+}
+
+.hud{display:flex;gap:8px;flex-wrap:wrap}
+.pill{
+  padding:6px 10px;
+  border-radius:999px;
+  background:#070b15;
+  border:1px solid var(--line);
+  font-size:11px;
+  font-weight:800;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px;
+  margin-top:12px;
+}
+
+.panic{
+  height:90px;
+  border-radius:26px;
+  border:none;
+  background:#0b0f17;
+  box-shadow:0 20px 50px #0008;
+}
+.panic:active{transform:scale(.97)}
+
+.blue{background:#5ee7ff}
+.red{background:#ff4d4d}
+.green{background:#44ff9a}
+.white{background:#fff}
+.black{background:#222}
+.yellow{background:#ffd84d}
+.pink{background:#ff5bd6}
+
+.micro{
+  display:flex;justify-content:space-between;
+  margin-top:10px;
+  font-size:12px;opacity:.6
+}
+
+.holoPanel canvas{
+  width:100%;
+  height:300px;
+  background:#070b15;
+  border-radius:18px;
+  margin-top:10px;
+}
+
+.jarvis{
+  margin-top:10px;
+  padding:10px;
+  background:#070b15;
+  border-radius:14px;
+  border:1px solid var(--line);
+  font-weight:700;
+}
+
+.calendarGrid{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:6px;
+}
+
+.dayCell{
+  aspect-ratio:1/1;
+  background:#070b15;
+  border-radius:12px;
+  border:1px solid var(--line);
+  padding:4px;
+}
+.dayNum{font-size:10px;opacity:.4}
+.dayBars{display:flex;gap:2px;margin-top:auto}
+.dayBar{height:6px;flex:1;border-radius:4px}
+
+.toast{
+  position:fixed;bottom:20px;left:50%;
+  transform:translateX(-50%);
+  padding:10px 16px;
+  background:#0b0f17;
+  border-radius:999px;
+  border:1px solid var(--line);
+  display:none;
+}
