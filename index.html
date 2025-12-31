@@ -2,8 +2,8 @@
 <html lang="fi">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Panic Buttons</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Panic OS</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -11,46 +11,184 @@
 <header class="topbar">
   <div class="brand">
     <div class="logo"></div>
-    <div>
-      <div class="brandTitle">Panic Buttons</div>
-      <div class="brandSub" id="subLine">—</div>
+    <div class="brandText">
+      <div class="brandTitle">Panic OS</div>
+      <div class="brandSub" id="subLine">TODAY — Tap what you actually did. Close app.</div>
     </div>
   </div>
-  <button id="finalizeBtn" class="btn">Finalize</button>
+
+  <div class="topActions">
+    <button class="chip" id="tabToday" aria-pressed="true">Today</button>
+    <button class="chip" id="tabCoach" aria-pressed="false">Coach</button>
+    <button class="chip" id="tabTrajectory" aria-pressed="false">Trajectory</button>
+    <button class="chip" id="tabCalendar" aria-pressed="false">Calendar</button>
+    <button class="btn" id="finalizeBtn">Finalize</button>
+  </div>
 </header>
 
 <main class="main">
 
-  <section class="panel">
+  <section class="panel hero">
     <div class="hud">
-      <div class="pill" id="hudDate"></div>
-      <div class="pill" id="hudWake"></div>
-      <div class="pill" id="hudTaps"></div>
-      <div class="pill" id="hudDayIdx"></div>
+      <div class="pill" id="hudDate">—</div>
+      <div class="pill" id="hudWake">Wake —</div>
+      <div class="pill" id="hudTaps">Taps —</div>
+      <div class="pill" id="hudState">LIVE</div>
+      <div class="pill" id="hudOdds">Odds —</div>
+      <div class="pill glow" id="hudGhost">Ghost —</div>
     </div>
-
-    <div class="grid">
-      <button class="panic blue" data-c="mind"></button>
-      <button class="panic red" data-c="body"></button>
-      <button class="panic green" data-c="food"></button>
-      <button class="panic white" data-c="rest"></button>
-      <button class="panic black" data-c="bad"></button>
-      <button class="panic yellow" data-c="deep"></button>
-      <button class="panic pink" data-c="cult"></button>
-    </div>
+    <div class="nowLine" id="nowLine">Tap. Done. No menus. No names. Just truth.</div>
   </section>
 
-  <section class="panel">
-    <canvas id="holoCanvas"></canvas>
-    <div class="jarvis" id="jarvisLine"></div>
+  <section id="viewToday">
+    <section class="panel netflix">
+      <div class="rowHead">
+        <div class="rowTitle">Mind</div>
+        <div class="rowHint">Tap · long-press = undo last</div>
+      </div>
+      <div class="row">
+        <button class="card c-mind" data-c="mind"><div class="cardGlow"></div><div class="cardLabel">Mind</div></button>
+        <button class="card c-deep" data-c="deep"><div class="cardGlow"></div><div class="cardLabel">Deep</div></button>
+        <button class="card c-cult" data-c="cult"><div class="cardGlow"></div><div class="cardLabel">Culture</div></button>
+      </div>
+
+      <div class="rowHead">
+        <div class="rowTitle">Body</div>
+        <div class="rowHint">Fast log</div>
+      </div>
+      <div class="row">
+        <button class="card c-body" data-c="body"><div class="cardGlow"></div><div class="cardLabel">Body</div></button>
+        <button class="card c-food" data-c="food"><div class="cardGlow"></div><div class="cardLabel">Food</div></button>
+        <button class="card c-rest" data-c="rest"><div class="cardGlow"></div><div class="cardLabel">Rest</div></button>
+      </div>
+
+      <div class="rowHead">
+        <div class="rowTitle">Shadow</div>
+        <div class="rowHint">Only when real</div>
+      </div>
+      <div class="row">
+        <button class="card c-bad" data-c="bad"><div class="cardGlow"></div><div class="cardLabel">Bad</div></button>
+      </div>
+
+      <div class="micro">
+        <div>Finalize locks the day. History is read-only.</div>
+        <div>Offline · LocalStorage</div>
+      </div>
+    </section>
+
+    <section class="panel holoPanel">
+      <div class="holoHead">
+        <div>
+          <div class="holoTitle" id="holoTitle">Today Flow</div>
+          <div class="holoMeta" id="holoMeta">—</div>
+        </div>
+        <button class="chip" id="backToTodayBtn" style="display:none;">Back</button>
+      </div>
+      <div class="canvasWrap">
+        <canvas id="holoCanvas"></canvas>
+      </div>
+      <div class="jarvis" id="jarvisLine">—</div>
+    </section>
   </section>
 
-  <section class="panel">
-    <div class="calendarGrid" id="calendarGrid"></div>
+  <section id="viewCoach" style="display:none;">
+    <section class="panel coachPanel">
+      <div class="coachHead">
+        <div>
+          <div class="coachTitle">AI Coach</div>
+          <div class="coachMeta" id="coachMeta">—</div>
+        </div>
+        <div class="coachActions">
+          <button class="chip" id="coachPin">Pin</button>
+          <button class="chip" id="coachRefresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="coachGrid">
+        <div class="coachCard">
+          <div class="coachLabel">Tonight’s Odds</div>
+          <div class="coachBig" id="coachOdds">—</div>
+          <div class="coachSmall" id="coachOddsNote">—</div>
+        </div>
+        <div class="coachCard">
+          <div class="coachLabel">Leverage Move</div>
+          <div class="coachBig" id="coachLeverage">—</div>
+          <div class="coachSmall" id="coachLeverageNote">—</div>
+        </div>
+        <div class="coachCard">
+          <div class="coachLabel">Ghost Matchup</div>
+          <div class="coachBig" id="coachGhost">—</div>
+          <div class="coachSmall" id="coachGhostNote">—</div>
+        </div>
+      </div>
+
+      <div class="coachPlan">
+        <div class="planTitle">One-Minute Plan</div>
+        <div class="planLine" id="plan1">—</div>
+        <div class="planLine" id="plan2">—</div>
+        <div class="planLine" id="plan3">—</div>
+      </div>
+
+      <div class="panel llmPanel">
+        <div class="llmHead">
+          <div>
+            <div class="llmTitle">LLM Coach</div>
+            <div class="llmMeta">Optional. App works fully without it.</div>
+          </div>
+          <button class="chip" id="llmRun">Run once</button>
+        </div>
+        <div class="llmForm">
+          <input id="llmEndpoint" placeholder="Endpoint (OpenAI-compatible), e.g. https://api.openai.com/v1/chat/completions" />
+          <input id="llmModel" placeholder="Model, e.g. gpt-4o-mini" />
+          <input id="llmKey" placeholder="API key" />
+          <label class="llmRow">
+            <input type="checkbox" id="llmRemember"/> remember locally
+          </label>
+        </div>
+        <div class="jarvis" id="llmOut">—</div>
+      </div>
+
+      <div class="jarvis" id="coachJarvis">—</div>
+    </section>
+  </section>
+
+  <section id="viewTrajectory" style="display:none;">
+    <section class="panel insightPanel">
+      <div class="insHead">
+        <div>
+          <div class="insTitle">Vertical Life Trajectory</div>
+          <div class="insMeta" id="insMeta">—</div>
+        </div>
+        <div class="insChips">
+          <button class="chip" id="range30" aria-pressed="true">30d</button>
+          <button class="chip" id="range90" aria-pressed="false">90d</button>
+        </div>
+      </div>
+      <div class="canvasWrap">
+        <canvas id="trajCanvas"></canvas>
+      </div>
+      <div class="jarvis" id="insJarvis">—</div>
+    </section>
+  </section>
+
+  <section id="viewCalendar" style="display:none;">
+    <section class="panel calendarPanel">
+      <div class="calTop">
+        <button class="chip" id="calPrev">‹</button>
+        <div class="calTitle" id="calTitle">—</div>
+        <button class="chip" id="calNext">›</button>
+      </div>
+      <div class="calDow">
+        <div>Ma</div><div>Ti</div><div>Ke</div><div>To</div><div>Pe</div><div>La</div><div>Su</div>
+      </div>
+      <div class="calendarGrid" id="calendarGrid"></div>
+      <div class="calHint" id="calHint">Tap päivä → näet sen päivän flow.</div>
+    </section>
   </section>
 
 </main>
 
+<div class="toast" id="toast"></div>
 <script src="app.js"></script>
 </body>
 </html>
