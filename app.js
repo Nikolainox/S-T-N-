@@ -1,20 +1,22 @@
-const KEY = "panic_os_full_v1";
+const KEY = "panic_os_launch_v1";
+
 const MAX_DAYS = 540;
 const MAX_EVENTS_PER_DAY = 5000;
 const BINS = 70;
 const LONG_PRESS_MS = 520;
 const MIN_FINAL_FOR_PROB = 7;
+
 const FORECAST_DAYS = 30;
 const MC_RUNS = 700;
 
 const COLORS = [
-  { id:"mind",  label:"Mind",    hex:"#5ee7ff" },
-  { id:"deep",  label:"Deep",    hex:"#ffd84d" },
-  { id:"cult",  label:"Culture", hex:"#ff5bd6" },
-  { id:"body",  label:"Body",    hex:"#ff4d4d" },
-  { id:"food",  label:"Food",    hex:"#44ff9a" },
-  { id:"rest",  label:"Rest",    hex:"#ffffff" },
-  { id:"bad",   label:"Bad",     hex:"#0b0f17" },
+  { id:"mind", label:"Mind", hex:"#5ee7ff" },
+  { id:"deep", label:"Deep", hex:"#ffd84d" },
+  { id:"cult", label:"Culture", hex:"#ff5bd6" },
+  { id:"body", label:"Body", hex:"#ff4d4d" },
+  { id:"food", label:"Food", hex:"#44ff9a" },
+  { id:"rest", label:"Rest", hex:"#ffffff" },
+  { id:"bad", label:"Bad", hex:"#0b0f17" },
 ];
 
 const POS_W = { mind:2.2, deep:2.6, cult:1.6, body:2.0, food:1.4, rest:2.4, bad:-3.0 };
@@ -28,7 +30,7 @@ const now = () => Date.now();
 const safeParse = s => { try { return JSON.parse(s); } catch { return null; } };
 const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}) : "—";
 
-let app = { v:1, days:[], coachPins:{}, llm:{} };
+let app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null };
 let selectedDate = isoToday();
 let calCursor = (()=>{ const d=new Date(); return { y:d.getFullYear(), m:d.getMonth() }; })();
 let trajRange = 30;
@@ -45,10 +47,10 @@ function toast(msg){
 function load(){
   const raw = localStorage.getItem(KEY);
   const p = raw ? safeParse(raw) : null;
-  if(p && typeof p==="object"){
-    app = { v:1, days:[], coachPins:{}, llm:{}, ...p };
+  if(p && typeof p === "object"){
+    app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null, ...p };
   } else {
-    app = { v:1, days:[], coachPins:{}, llm:{} };
+    app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null };
   }
   normalizeAll();
 }
@@ -87,11 +89,15 @@ function getDay(date){
   return d;
 }
 
-function dayIndex(){
-  const first = app.days[0]?.date || isoToday();
-  const start = new Date(first+"T00:00:00Z").getTime();
-  const t = new Date(isoToday()+"T00:00:00Z").getTime();
-  return Math.round((t-start)/86400000)+1;
+function syncDayRollover(){
+  const t = isoToday();
+  const last = app.lastOpenDate || null;
+
+  if(!selectedDate || selectedDate !== t) selectedDate = t;
+  if(last && last !== t) selectedDate = t;
+
+  app.lastOpenDate = t;
+  save();
 }
 
 function scoreDay(day){
@@ -219,109 +225,62 @@ function leverageMoveForTomorrow(){
 }
 
 function dailyJarvis(day){
-  const s = scoreDay(day);
-  const ghost = buildGhostDay(day);
-  const gScore = ghost ? scoreDay(ghost).score : null;
   const pg = pGood();
   const pd = pDrift7();
   const py = pYouBeatsGhost();
 
   if(!day.finalized){
-    return "Jarvis: tap. sulje app. totuus tallentuu vasta finalize jälkeen.";
+    return "Jarvis: tap. sulje app. finalize illalla lukitsee totuuden.";
   }
-
   if(pg==null){
-    return "Jarvis: kerää 7 finalized päivää → prosentit herää eloon.";
-  }
-
-  if(gScore!=null && gScore > s.score){
-    return `Jarvis: Ghost olisi voittanut. P(good) ${pg}% · P(drift7) ${pd ?? "—"}%.`;
+    return `Jarvis: kerää ${MIN_FINAL_FOR_PROB} finalized päivää → prosentit herää.`;
   }
   if(pd!=null && pd > 45){
-    return `Jarvis: drift-riski ${pd}%. Pidä palautus aikaisemmin.`;
+    return `Jarvis: drift-riski ${pd}%. Tee palautus aikaisemmin.`;
   }
-  return `Jarvis: suunta elossa. P(good) ${pg}% · You>Ghost ${py ?? "—"}%.`;
+  return `Jarvis: P(good) ${pg}% · You>Ghost ${py ?? "—"}%.`;
 }
 
-function coachGenerateForDate(date){
-  const day = getDay(date);
-  const lev = leverageMoveForTomorrow();
+function coachGenerateSimple(){
   const pg = pGood();
   const pd = pDrift7();
   const py = pYouBeatsGhost();
+  const lev = leverageMoveForTomorrow();
 
-  const s = scoreDay(day);
-  const has = id => (s.counts[id]||0) > 0;
+  const truth = (pg==null)
+    ? `Truth: kerää ${MIN_FINAL_FOR_PROB} finalized päivää → prosentit aktivoituu.`
+    : `Truth: P(good) ${pg}% · You>Ghost ${py ?? "—"}%`;
 
-  const plan = [];
-  if(lev){
-    plan.push(`${lev.label} nyt. (Δ P(good) ~${lev.delta >= 0 ? "+" : ""}${lev.delta}%)`);
-  } else {
-    plan.push(`Mind tai Rest nyt. (palaa rytmiin nopeasti)`);
-  }
+  const move = lev
+    ? `Next: ${lev.label} (Δ ${lev.delta >= 0 ? "+" : ""}${lev.delta}%)`
+    : `Next: Rest tai Mind (palaa rytmiin)`;
 
-  if((s.counts.bad||0) > 0 && !has("rest")){
-    plan.push(`Rest ensimmäiseksi palautukseksi (katkaise bad-ketju).`);
-  } else if(!has("deep")){
-    plan.push(`Deep 10 min ennen kuin päivä karkaa (pieni voitto).`);
-  } else if(!has("mind")){
-    plan.push(`Mind 2 min: hengitys / hiljaisuus / kylmä. (yksi painallus riittää)`);
-  } else {
-    plan.push(`Pidä linja: yksi Body tai Food ennen iltaa.`);
-  }
+  const risk = (pd==null)
+    ? `Risk: —`
+    : (pd > 45 ? `Risk: Drift ${pd}% (palautus aikaisemmin)` : `Risk: Drift ${pd}%`);
 
-  if((s.counts.bad||0) >= 2){
-    plan.push(`IF bad-impulssi → THEN Rest tai Mind ensin.`);
-  } else {
-    plan.push(`IF “ei jaksa” → THEN Rest + sulje app.`);
-  }
-
-  const meta = (pg==null)
-    ? `Learning… need ${MIN_FINAL_FOR_PROB} finalized days`
-    : `P(good) ${pg}% · P(drift7) ${pd}% · You>Ghost ${py}%`;
-
-  const line = (pg==null)
-    ? "Coach: kerää 7 päivää finalize → sitten ohjaus on oikeasti sinua varten."
-    : `Coach: ${meta}. Tee seuraava teko ja sulje sovellus.`;
-
-  return { date, oddsGood:pg, oddsDrift:pd, oddsGhost:py, leverage:lev, plan, line, meta };
+  return { truth, move, risk, lev };
 }
 
-function coachRender(date){
-  const day = getDay(date);
-  const pinned = !!app.coachPins[date];
-  let coach = day.coach;
+function coachRender(){
+  const pinned = !!app.coachPins[isoToday()];
+  const day = getDay(isoToday());
 
+  let coach = day.coach;
   if(!coach || !pinned){
-    coach = coachGenerateForDate(date);
+    const c = coachGenerateSimple();
+    coach = { date: isoToday(), ...c };
     if(pinned){
       day.coach = coach;
       save();
     }
   }
 
-  $("coachMeta").textContent = coach.meta;
-
-  $("coachOdds").textContent = coach.oddsGood==null ? "—" : `${coach.oddsGood}%`;
-  $("coachOddsNote").textContent = coach.oddsGood==null
-    ? `Finalize ${MIN_FINAL_FOR_PROB} päivää, sitten prosentit.`
-    : `P(drift7) ${coach.oddsDrift}% · päivittyy finalize jälkeen`;
-
-  $("coachLeverage").textContent = coach.leverage ? coach.leverage.label : "—";
-  $("coachLeverageNote").textContent = coach.leverage
-    ? `Base ${coach.leverage.base}% → ${coach.leverage.p}% (Δ ${coach.leverage.delta >= 0 ? "+" : ""}${coach.leverage.delta}%, n=${coach.leverage.trials})`
-    : `Leverage aktivoituu kun dataa kertyy.`;
-
-  $("coachGhost").textContent = coach.oddsGhost==null ? "—" : `${coach.oddsGhost}%`;
-  $("coachGhostNote").textContent = coach.oddsGhost==null
-    ? `Ghost vaatii finalize-historiaa.`
-    : `You>Ghost lasketaan 30 päivästä (beta-stabiloitu).`;
-
-  $("plan1").textContent = coach.plan[0] || "—";
-  $("plan2").textContent = coach.plan[1] || "—";
-  $("plan3").textContent = coach.plan[2] || "—";
-
-  $("coachJarvis").textContent = coach.line;
+  $("coachMeta").textContent = pinned ? "Pinned snapshot" : "Live";
+  $("plan1").textContent = coach.truth;
+  $("plan2").textContent = coach.move;
+  $("plan3").textContent = coach.risk;
+  $("coachJarvis").textContent = "Close app. Do the next move.";
 }
 
 function fitCanvas(canvas){
@@ -332,7 +291,7 @@ function fitCanvas(canvas){
   if(canvas.width !== w || canvas.height !== h){
     canvas.width = w; canvas.height = h;
   }
-  return { w, h, dpr };
+  return { w, h };
 }
 
 function buildBins(day){
@@ -415,7 +374,6 @@ function drawHolo(day){
     for(const c of COLORS){
       const a = gBins[c.id];
       const off = offsets[c.id] ?? 0;
-      if(!a) continue;
       ctx.strokeStyle = hexToRgba(c.hex, 0.34);
       ctx.lineWidth = 2;
       ctx.lineCap="round"; ctx.lineJoin="round";
@@ -471,20 +429,7 @@ function drawHolo(day){
     : "No taps yet";
 }
 
-function ewma(values, alpha){
-  let m = null;
-  for(const v of values) m = (m==null) ? v : (alpha*v + (1-alpha)*m);
-  return m==null ? 0 : m;
-}
-
-function patRileyDriftIndex(days){
-  const vals = days.map(d=>scoreDay(d).score);
-  const fast = ewma(vals, 0.35);
-  const slow = ewma(vals, 0.12);
-  return Number((fast - slow).toFixed(3));
-}
-
-function mcForecastFromHistory(days, horizon){
+function mcForecast(days, horizon){
   if(days.length < 7) return null;
 
   const freq = Object.fromEntries(COLORS.map(c=>[c.id,0]));
@@ -530,7 +475,6 @@ function mcForecastFromHistory(days, horizon){
     p10.push(col[Math.floor(col.length*0.10)]);
     p90.push(col[Math.floor(col.length*0.90)]);
   }
-
   return { median, p10, p90 };
 }
 
@@ -541,6 +485,10 @@ function drawTrajectory(){
   ctx.clearRect(0,0,w,h);
 
   const finals = finalizedDays(trajRange);
+  const pg = pGood();
+  const pd = pDrift7();
+  const py = pYouBeatsGhost();
+
   if(!finals.length){
     $("insMeta").textContent = `Need ${MIN_FINAL_FOR_PROB} finalized days`;
     $("insJarvis").textContent = "Jarvis: finalize 7 päivää → trajectory herää.";
@@ -550,28 +498,17 @@ function drawTrajectory(){
   }
 
   const scores = finals.map(d=>scoreDay(d).score);
-  const ghosts = finals.map(d=>{
-    const g = buildGhostDay(d);
-    return g ? scoreDay(g).score : null;
-  });
+  const forecast = mcForecast(finals, FORECAST_DAYS);
 
-  const forecast = mcForecastFromHistory(finals, FORECAST_DAYS);
-  const post = betaPosteriorGood(finals);
-  const drift = patRileyDriftIndex(finals);
-  const driftWord = drift > 0.06 ? "up" : (drift < -0.06 ? "down" : "flat");
+  $("insMeta").textContent = pg==null
+    ? `Learning… need ${MIN_FINAL_FOR_PROB} finalized days`
+    : `P(good) ${pg}% · P(drift7) ${pd ?? "—"}% · You>Ghost ${py ?? "—"}%`;
 
-  const pg = Math.round(post.mean*100);
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
+  $("insJarvis").textContent = pg==null
+    ? "Jarvis: kerää finalizea. Ennuste aktivoituu pian."
+    : "Jarvis: katso suuntaa, älä yksittäistä päivää.";
 
-  $("insMeta").textContent = `P(good) ${pg}% · P(drift7) ${pd ?? "—"}% · You>Ghost ${py ?? "—"}% · Drift ${driftWord}`;
-  $("insJarvis").textContent = driftWord==="up"
-    ? "Jarvis: suunta nousee. Pidä palautus aikaisena."
-    : driftWord==="down"
-      ? "Jarvis: suunta laskee. Tee yksi palauttava teko aikaisemmin."
-      : "Jarvis: tasainen. Pieni rytmimuutos tekee eron.";
-
-  const all = [...scores, ...ghosts.filter(x=>x!=null)];
+  const all = [...scores];
   if(forecast) all.push(...forecast.p10, ...forecast.p90);
   const minS = Math.min(-2.8, ...all, 0);
   const maxS = Math.max( 3.2, ...all, 0);
@@ -640,22 +577,6 @@ function drawTrajectory(){
   }
 
   ctx.save();
-  ctx.globalAlpha = 0.32;
-  ctx.setLineDash([7,9]);
-  ctx.strokeStyle = "rgba(255,255,255,0.45)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for(let i=0;i<ghosts.length;i++){
-    const gs = ghosts[i];
-    if(gs==null) continue;
-    const x = mapX(gs), y = mapY(i);
-    if(i===0 || ghosts[i-1]==null) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  ctx.save();
   ctx.strokeStyle = "rgba(94,231,255,0.18)";
   ctx.lineWidth = 12;
   ctx.lineCap="round"; ctx.lineJoin="round";
@@ -677,14 +598,6 @@ function drawTrajectory(){
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
-  ctx.restore();
-
-  const last = scores.at(-1) ?? 0;
-  ctx.save();
-  ctx.fillStyle = "rgba(255,216,77,0.90)";
-  ctx.beginPath();
-  ctx.arc(mapX(last), mapY(scores.length-1), 5, 0, Math.PI*2);
-  ctx.fill();
   ctx.restore();
 }
 
@@ -817,7 +730,7 @@ function finalizeDay(){
   day.score = scoreDay(day).score;
   day.insight = dailyJarvis(day);
   day.finalized = true;
-  if(app.coachPins[day.date]) day.coach = coachGenerateForDate(day.date);
+  if(app.coachPins[day.date]) day.coach = { date: day.date, ...coachGenerateSimple() };
   save();
   renderAll();
   toast("FINALIZED");
@@ -835,8 +748,7 @@ function renderAll(){
   renderJarvis(day);
   drawHolo(day);
 
-  coachRender(isoToday());
-
+  coachRender();
   renderMonthCalendar(calCursor.y, calCursor.m);
   drawTrajectory();
 
@@ -884,10 +796,10 @@ function bindCards(){
 }
 
 function bindTabs(){
-  $("tabToday").addEventListener("click", ()=>{ setView("today"); renderAll(); });
-  $("tabCoach").addEventListener("click", ()=>{ setView("coach"); renderAll(); });
-  $("tabTrajectory").addEventListener("click", ()=>{ setView("traj"); renderAll(); });
-  $("tabCalendar").addEventListener("click", ()=>{ setView("cal"); renderAll(); });
+  $("tabToday").addEventListener("click", ()=>{ syncDayRollover(); setView("today"); renderAll(); });
+  $("tabCoach").addEventListener("click", ()=>{ syncDayRollover(); setView("coach"); renderAll(); });
+  $("tabTrajectory").addEventListener("click", ()=>{ syncDayRollover(); setView("traj"); renderAll(); });
+  $("tabCalendar").addEventListener("click", ()=>{ syncDayRollover(); setView("cal"); renderAll(); });
 }
 
 function bindCalendarNav(){
@@ -931,11 +843,45 @@ function bindCoach(){
     const d = isoToday();
     app.coachPins[d] = !app.coachPins[d];
     const day = getDay(d);
-    if(app.coachPins[d]) day.coach = coachGenerateForDate(d);
+    if(app.coachPins[d]) day.coach = { date:d, ...coachGenerateSimple() };
     save();
     renderAll();
     toast(app.coachPins[d] ? "PINNED" : "UNPIN");
   });
+}
+
+function buildLLMPayload(){
+  const finals = finalizedDays(30);
+  const pg = pGood();
+  const pd = pDrift7();
+  const py = pYouBeatsGhost();
+
+  const agg = Object.fromEntries(COLORS.map(c=>[c.id,0]));
+  for(const d of finals){
+    const r = scoreDay(d);
+    for(const k in r.counts) agg[k] += r.counts[k] || 0;
+  }
+  const top = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
+
+  const driftSignals = [];
+  if(pd != null && pd > 45) driftSignals.push("high drift risk");
+  const badRate = finals.length ? finals.reduce((s,d)=>s+scoreDay(d).badFrac,0)/finals.length : 0;
+  if(badRate > 0.22) driftSignals.push("bad appears often");
+
+  return { windowDays: finals.length, goodProbability: pg, drift7: pd, youBeatsGhost: py, dominantActions: top, driftSignals };
+}
+
+function buildLLMPrompt(payload){
+  return [
+    "Behavior summary JSON below.",
+    "Output max 3 sentences:",
+    "1) Dominant pattern",
+    "2) Smallest leverage move",
+    "3) Warning only if drift signals exist",
+    "No fluff. No praise. No shame. Mention probabilities if present.",
+    "",
+    JSON.stringify(payload, null, 2)
+  ].join("\n");
 }
 
 function bindLLM(){
@@ -946,7 +892,6 @@ function bindLLM(){
 
   endpointEl.value = app.llm.endpoint || "";
   modelEl.value = app.llm.model || "";
-  keyEl.value = "";
   rememberEl.checked = !!app.llm.remember;
 
   function persist(){
@@ -975,8 +920,8 @@ function bindLLM(){
       return;
     }
 
-    const payload = buildLLMCoachPayload();
-    const prompt = buildLLMCoachPrompt(payload);
+    const payload = buildLLMPayload();
+    const prompt = buildLLMPrompt(payload);
 
     $("llmOut").textContent = "LLM: running…";
     try{
@@ -1003,65 +948,13 @@ function bindLLM(){
       }
 
       const json = await res.json();
-      const text =
-        json?.choices?.[0]?.message?.content ??
-        json?.choices?.[0]?.text ??
-        null;
-
+      const text = json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.text ?? null;
       $("llmOut").textContent = text ? text.trim() : "LLM: empty response.";
       if(rememberEl.checked) persist();
     }catch(e){
       $("llmOut").textContent = `LLM failed: ${String(e).slice(0,180)}`;
     }
   });
-}
-
-function buildLLMCoachPayload(){
-  const finals = finalizedDays(30);
-  const last7 = finalizedDays(7);
-  const pg = pGood();
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
-  const drift = patRileyDriftIndex(finals);
-
-  const aggCounts = Object.fromEntries(COLORS.map(c=>[c.id,0]));
-  for(const d of finals){
-    const r = scoreDay(d);
-    for(const k in r.counts) aggCounts[k] += r.counts[k] || 0;
-  }
-
-  const top = Object.entries(aggCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
-  const missing = COLORS.map(c=>c.id).filter(id=>aggCounts[id]===0);
-
-  const driftSignals = [];
-  const negLast7 = last7.filter(d=>scoreDay(d).score<0).length;
-  if(negLast7>=3) driftSignals.push("many negative days recently");
-  const badRate = finals.length ? finals.reduce((s,d)=>s+scoreDay(d).badFrac,0)/finals.length : 0;
-  if(badRate>0.22) driftSignals.push("bad habits appear frequently");
-  if(drift < -0.06) driftSignals.push("trend drifting down");
-
-  return {
-    windowDays: finals.length,
-    goodProbability: pg,
-    drift7: pd,
-    youBeatsGhost: py,
-    driftIndex: drift,
-    dominantActions: top,
-    missingActions: missing.slice(0,4),
-    driftSignals
-  };
-}
-
-function buildLLMCoachPrompt(payload){
-  return [
-    "Here is behavior summary JSON. Create a 3-sentence coach brief:",
-    "1) Dominant pattern (truthful, calm)",
-    "2) Smallest leverage action",
-    "3) Warning if drift signals exist",
-    "No fluff. No generic advice. Reference probabilities if present.",
-    "",
-    JSON.stringify(payload, null, 2)
-  ].join("\n");
 }
 
 function finalDiagnostic(){
@@ -1081,6 +974,8 @@ function finalDiagnostic(){
 
 function init(){
   load();
+  syncDayRollover();
+
   bindTabs();
   bindCalendarNav();
   bindRange();
@@ -1088,9 +983,16 @@ function init(){
   bindLLM();
   bindCards();
 
-  selectedDate = isoToday();
   setView("today");
   renderAll();
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      syncDayRollover();
+      setView("today");
+      renderAll();
+    }
+  });
 
   const diag = finalDiagnostic();
   toast(diag.msg);
