@@ -47,9 +47,9 @@
         <div class="rowHint">Tap · long-press = undo last</div>
       </div>
       <div class="row">
-        <button class="card c-mind" data-c="mind"><div class="cardGlow"></div><div class="cardLabel">Mind</div></button>
-        <button class="card c-deep" data-c="deep"><div class="cardGlow"></div><div class="cardLabel">Deep</div></button>
-        <button class="card c-cult" data-c="cult"><div class="cardGlow"></div><div class="cardLabel">Culture</div></button>
+        <button class="card c-mind" data-c="mind"><div class="cardGlow"></div><div class="cardLabel">Mind · Reset</div></button>
+        <button class="card c-deep" data-c="deep"><div class="cardGlow"></div><div class="cardLabel">Deep · Focus</div></button>
+        <button class="card c-cult" data-c="cult"><div class="cardGlow"></div><div class="cardLabel">Culture · Connect</div></button>
       </div>
 
       <div class="rowHead">
@@ -57,9 +57,9 @@
         <div class="rowHint">Fast log</div>
       </div>
       <div class="row">
-        <button class="card c-body" data-c="body"><div class="cardGlow"></div><div class="cardLabel">Body</div></button>
-        <button class="card c-food" data-c="food"><div class="cardGlow"></div><div class="cardLabel">Food</div></button>
-        <button class="card c-rest" data-c="rest"><div class="cardGlow"></div><div class="cardLabel">Rest</div></button>
+        <button class="card c-body" data-c="body"><div class="cardGlow"></div><div class="cardLabel">Body · Train</div></button>
+        <button class="card c-food" data-c="food"><div class="cardGlow"></div><div class="cardLabel">Food · Fuel</div></button>
+        <button class="card c-rest" data-c="rest"><div class="cardGlow"></div><div class="cardLabel">Rest · Recover</div></button>
       </div>
 
       <div class="rowHead">
@@ -67,7 +67,7 @@
         <div class="rowHint">Only when real</div>
       </div>
       <div class="row">
-        <button class="card c-bad" data-c="bad"><div class="cardGlow"></div><div class="cardLabel">Bad</div></button>
+        <button class="card c-bad" data-c="bad"><div class="cardGlow"></div><div class="cardLabel">Bad · Drift</div></button>
       </div>
 
       <div class="micro">
@@ -104,26 +104,8 @@
         </div>
       </div>
 
-      <div class="coachGrid">
-        <div class="coachCard">
-          <div class="coachLabel">Tonight’s Odds</div>
-          <div class="coachBig" id="coachOdds">—</div>
-          <div class="coachSmall" id="coachOddsNote">—</div>
-        </div>
-        <div class="coachCard">
-          <div class="coachLabel">Leverage Move</div>
-          <div class="coachBig" id="coachLeverage">—</div>
-          <div class="coachSmall" id="coachLeverageNote">—</div>
-        </div>
-        <div class="coachCard">
-          <div class="coachLabel">Ghost Matchup</div>
-          <div class="coachBig" id="coachGhost">—</div>
-          <div class="coachSmall" id="coachGhostNote">—</div>
-        </div>
-      </div>
-
       <div class="coachPlan">
-        <div class="planTitle">One-Minute Plan</div>
+        <div class="planTitle">Simple Coach</div>
         <div class="planLine" id="plan1">—</div>
         <div class="planLine" id="plan2">—</div>
         <div class="planLine" id="plan3">—</div>
@@ -133,7 +115,7 @@
         <div class="llmHead">
           <div>
             <div class="llmTitle">LLM Coach</div>
-            <div class="llmMeta">Optional. App works fully without it.</div>
+            <div class="llmMeta">Optional. Works only if you set endpoint+model+key.</div>
           </div>
           <button class="chip" id="llmRun">Run once</button>
         </div>
