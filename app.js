@@ -1,1001 +1,1605 @@
-const KEY = "panic_os_launch_v1";
+(() => {
+  "use strict";
 
-const MAX_DAYS = 540;
-const MAX_EVENTS_PER_DAY = 5000;
-const BINS = 70;
-const LONG_PRESS_MS = 520;
-const MIN_FINAL_FOR_PROB = 7;
+  // -----------------------------
+  // Core laws guardrail:
+  // - zero typing
+  // - minimal interaction path
+  // - no background loops (only rAF when visible)
+  // -----------------------------
 
-const FORECAST_DAYS = 30;
-const MC_RUNS = 700;
+  const STORAGE_KEY = "holoEngine_v1";
+  const SCHEMA_VERSION = 1;
 
-const COLORS = [
-  { id:"mind", label:"Mind", hex:"#5ee7ff" },
-  { id:"deep", label:"Deep", hex:"#ffd84d" },
-  { id:"cult", label:"Culture", hex:"#ff5bd6" },
-  { id:"body", label:"Body", hex:"#ff4d4d" },
-  { id:"food", label:"Food", hex:"#44ff9a" },
-  { id:"rest", label:"Rest", hex:"#ffffff" },
-  { id:"bad", label:"Bad", hex:"#0b0f17" },
-];
+  const MAX_DAYS = 400;             // hard cap
+  const MAX_EVENTS_PER_DAY = 80;    // hard cap per day (prevents runaway taps)
+  const EXPERIMENT_DAYS = 7;
 
-const POS_W = { mind:2.2, deep:2.6, cult:1.6, body:2.0, food:1.4, rest:2.4, bad:-3.0 };
-const RESTORE = new Set(["mind","rest","deep"]);
-
-const $ = id => document.getElementById(id);
-const $all = sel => [...document.querySelectorAll(sel)];
-const clamp = (x,a,b) => Math.max(a, Math.min(b,x));
-const isoToday = () => new Date().toISOString().slice(0,10);
-const now = () => Date.now();
-const safeParse = s => { try { return JSON.parse(s); } catch { return null; } };
-const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}) : "—";
-
-let app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null };
-let selectedDate = isoToday();
-let calCursor = (()=>{ const d=new Date(); return { y:d.getFullYear(), m:d.getMonth() }; })();
-let trajRange = 30;
-
-function toast(msg){
-  const el = $("toast");
-  if(!el) return;
-  el.textContent = msg;
-  el.style.display = "block";
-  clearTimeout(toast._t);
-  toast._t = setTimeout(()=> el.style.display="none", 900);
-}
-
-function load(){
-  const raw = localStorage.getItem(KEY);
-  const p = raw ? safeParse(raw) : null;
-  if(p && typeof p === "object"){
-    app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null, ...p };
-  } else {
-    app = { v:1, days:[], coachPins:{}, llm:{}, lastOpenDate:null };
-  }
-  normalizeAll();
-}
-
-function save(){
-  app.days = app.days.slice(-MAX_DAYS);
-  localStorage.setItem(KEY, JSON.stringify(app));
-}
-
-function normalizeAll(){
-  if(!Array.isArray(app.days)) app.days = [];
-  if(!app.coachPins || typeof app.coachPins!=="object") app.coachPins = {};
-  if(!app.llm || typeof app.llm!=="object") app.llm = {};
-
-  for(const d of app.days){
-    if(typeof d.date!=="string") d.date = isoToday();
-    if(!Array.isArray(d.events)) d.events = [];
-    d.finalized = !!d.finalized;
-    d.wakeTs = (typeof d.wakeTs==="number" && Number.isFinite(d.wakeTs)) ? d.wakeTs : null;
-    d.finalTs = (typeof d.finalTs==="number" && Number.isFinite(d.finalTs)) ? d.finalTs : null;
-    d.score = (typeof d.score==="number" && Number.isFinite(d.score)) ? d.score : 0;
-    d.insight = (typeof d.insight==="string") ? d.insight : null;
-    d.coach = (d.coach && typeof d.coach==="object") ? d.coach : null;
-    d.events = d.events.filter(e=>e && typeof e.t==="number" && typeof e.c==="string").slice(-MAX_EVENTS_PER_DAY);
-  }
-  app.days.sort((a,b)=>a.date<b.date?-1:1);
-}
-
-function getDay(date){
-  let d = app.days.find(x=>x.date===date);
-  if(!d){
-    d = { date, finalized:false, wakeTs:null, finalTs:null, events:[], insight:null, score:0, coach:null };
-    app.days.push(d);
-    app.days.sort((a,b)=>a.date<b.date?-1:1);
-  }
-  return d;
-}
-
-function syncDayRollover(){
-  const t = isoToday();
-  const last = app.lastOpenDate || null;
-
-  if(!selectedDate || selectedDate !== t) selectedDate = t;
-  if(last && last !== t) selectedDate = t;
-
-  app.lastOpenDate = t;
-  save();
-}
-
-function scoreDay(day){
-  const counts = Object.fromEntries(COLORS.map(x=>[x.id,0]));
-  for(const e of day.events||[]) if(counts[e.c]!=null) counts[e.c]++;
-
-  const total = Math.max(1, (day.events||[]).length);
-  let raw = 0;
-  for(const k in counts){
-    const frac = counts[k]/total;
-    raw += (POS_W[k]||0) * (0.65*frac + 0.35*Math.sqrt(frac));
-  }
-
-  const badFrac = counts.bad/total;
-  const restFrac = counts.rest/total;
-  const mindFrac = counts.mind/total;
-  const deepFrac = counts.deep/total;
-
-  const good = (raw > 0.70) && (badFrac <= 0.22) && (restFrac + mindFrac >= 0.20) && (deepFrac >= 0.05);
-
-  return { score:Number(raw.toFixed(3)), counts, total, good, badFrac, restFrac, mindFrac, deepFrac };
-}
-
-function buildGhostDay(realDay){
-  if(!realDay || !(realDay.events||[]).length) return null;
-  const ghost = {
-    date: realDay.date, finalized:true,
-    wakeTs: realDay.wakeTs, finalTs: realDay.finalTs,
-    events: []
+  const TYPES = ["mind","deep","body","food","rest","bad"];
+  const TYPE_LABEL = {
+    mind:"Mind", deep:"Deep", body:"Body", food:"Food", rest:"Rest", bad:"Bad"
   };
-  for(const e of realDay.events){
-    if(!RESTORE.has(e.c)) ghost.events.push({ t:e.t, c:e.c });
+
+  const $ = (id) => document.getElementById(id);
+
+  // UI refs
+  const todayDateEl = $("todayDate");
+  const wakeLabelEl = $("wakeLabel");
+  const lockLabelEl = $("lockLabel");
+  const dayPillEl = $("dayPill");
+  const finalizeBtn = $("finalizeBtn");
+  const tapGrid = $("tapGrid");
+
+  const readinessText = $("readinessText");
+  const fatigueText = $("fatigueText");
+  const growthText = $("growthText");
+  const readinessFill = $("readinessFill");
+  const fatigueFill = $("fatigueFill");
+  const growthFill = $("growthFill");
+
+  const coachTruth = $("coachTruth");
+  const coachNext = $("coachNext");
+  const coachRisk = $("coachRisk");
+  const coachRiskRow = $("coachRiskRow");
+
+  const playbackToggle = $("playbackToggle");
+  const playbackPanel = $("playbackPanel");
+  const pbSlider = $("pbSlider");
+  const pbLabel = $("pbLabel");
+  const pbModePill = $("pbModePill");
+  const youGhostPctEl = $("youGhostPct");
+
+  const probPill = $("probPill");
+  const pGrowthEl = $("pGrowth");
+  const pDriftEl = $("pDrift");
+  const pBeatGhostEl = $("pBeatGhost");
+
+  const calendarEl = $("calendar");
+  const toTodayBtn = $("toTodayBtn");
+  const todayPanel = $("todayPanel");
+
+  const holoCanvas = $("holoCanvas");
+  const trajCanvas = $("trajCanvas");
+  const holoMeta = $("holoMeta");
+
+  // -----------------------------
+  // Utils
+  // -----------------------------
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+  function softSat(count, scale) { // 0..1 saturating, scale ~ "how many taps to feel it"
+    return 1 - Math.exp(-Math.max(0, count) / Math.max(1e-6, scale));
   }
-
-  const hist = app.days.filter(d=>d.finalized && (d.events||[]).length);
-  if(hist.length){
-    const badRate = hist.reduce((s,d)=>{
-      const r = scoreDay(d);
-      return s + (r.counts.bad||0) / Math.max(1,(d.events||[]).length);
-    },0)/hist.length;
-
-    const extra = Math.round(badRate * 4);
-    const lastT = ghost.events.at(-1)?.t || realDay.wakeTs || now();
-    for(let i=0;i<extra;i++) ghost.events.push({ t:lastT + (i+1)*60000, c:"bad" });
+  function dayKeyFromDate(d) { // local day key
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2,"0");
+    const da = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${da}`;
   }
-  return ghost;
-}
-
-function finalizedDays(span){
-  const finals = app.days.filter(d=>d.finalized);
-  return span ? finals.slice(-span) : finals;
-}
-
-function betaPosteriorGood(days){
-  let a=1,b=1;
-  for(const d of days){
-    const r = scoreDay(d);
-    if(r.good) a++; else b++;
+  function parseDayKey(key) { // "YYYY-MM-DD"
+    const [y,m,d] = key.split("-").map(n => parseInt(n,10));
+    return new Date(y, (m||1)-1, d||1, 12, 0, 0, 0);
   }
-  return { a,b,mean:a/(a+b) };
-}
-
-function pGood(){
-  const days = finalizedDays();
-  if(days.length < MIN_FINAL_FOR_PROB) return null;
-  return Math.round(betaPosteriorGood(days).mean * 100);
-}
-
-function pDrift7(){
-  const last7 = finalizedDays(7);
-  if(last7.length < MIN_FINAL_FOR_PROB) return null;
-  const neg = last7.filter(d=>scoreDay(d).score < 0).length;
-  const a=1,b=1;
-  return Math.round(((neg+a) / (last7.length+a+b)) * 100);
-}
-
-function pYouBeatsGhost(){
-  const days = finalizedDays(30);
-  if(days.length < MIN_FINAL_FOR_PROB) return null;
-  let win=0, n=0;
-  for(const d of days){
-    const g = buildGhostDay(d);
-    if(!g) continue;
-    const you = scoreDay(d).score;
-    const ghost = scoreDay(g).score;
-    n++;
-    if(you > ghost) win++;
+  function formatShortDate(key) {
+    const d = parseDayKey(key);
+    const wd = d.toLocaleDateString(undefined,{weekday:"short"});
+    const mo = d.toLocaleDateString(undefined,{month:"short"});
+    return `${wd} ${mo} ${d.getDate()}`;
   }
-  if(n===0) return null;
-  const a=1,b=1;
-  return Math.round(((win+a)/(n+a+b))*100);
-}
-
-function leverageMoveForTomorrow(){
-  const days = finalizedDays(120);
-  if(days.length < MIN_FINAL_FOR_PROB) return null;
-
-  const base = betaPosteriorGood(days).mean;
-
-  let best = { id:null, delta:-999, p:null, trials:0 };
-  for(const c of COLORS){
-    if(c.id==="bad") continue;
-    const sub = [];
-    for(const d of days){
-      const r = scoreDay(d);
-      if((r.counts[c.id]||0) > 0) sub.push(d);
-    }
-    if(sub.length < 5) continue;
-    const p = betaPosteriorGood(sub).mean;
-    const delta = p - base;
-    if(delta > best.delta){
-      best = { id:c.id, delta, p, trials:sub.length };
-    }
+  function formatTime(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    return d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
   }
-
-  if(!best.id) return null;
-  return {
-    id: best.id,
-    label: COLORS.find(x=>x.id===best.id)?.label || best.id,
-    delta: Math.round(best.delta*100),
-    p: Math.round(best.p*100),
-    base: Math.round(base*100),
-    trials: best.trials
-  };
-}
-
-function dailyJarvis(day){
-  const pg = pGood();
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
-
-  if(!day.finalized){
-    return "Jarvis: tap. sulje app. finalize illalla lukitsee totuuden.";
+  function safeJSONParse(s, fallback) {
+    try { return JSON.parse(s); } catch { return fallback; }
   }
-  if(pg==null){
-    return `Jarvis: kerää ${MIN_FINAL_FOR_PROB} finalized päivää → prosentit herää.`;
-  }
-  if(pd!=null && pd > 45){
-    return `Jarvis: drift-riski ${pd}%. Tee palautus aikaisemmin.`;
-  }
-  return `Jarvis: P(good) ${pg}% · You>Ghost ${py ?? "—"}%.`;
-}
+  function now() { return Date.now(); }
 
-function coachGenerateSimple(){
-  const pg = pGood();
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
-  const lev = leverageMoveForTomorrow();
+  // Beta posterior mean
+  function betaMean(alpha, beta) { return alpha / (alpha + beta); }
 
-  const truth = (pg==null)
-    ? `Truth: kerää ${MIN_FINAL_FOR_PROB} finalized päivää → prosentit aktivoituu.`
-    : `Truth: P(good) ${pg}% · You>Ghost ${py ?? "—"}%`;
-
-  const move = lev
-    ? `Next: ${lev.label} (Δ ${lev.delta >= 0 ? "+" : ""}${lev.delta}%)`
-    : `Next: Rest tai Mind (palaa rytmiin)`;
-
-  const risk = (pd==null)
-    ? `Risk: —`
-    : (pd > 45 ? `Risk: Drift ${pd}% (palautus aikaisemmin)` : `Risk: Drift ${pd}%`);
-
-  return { truth, move, risk, lev };
-}
-
-function coachRender(){
-  const pinned = !!app.coachPins[isoToday()];
-  const day = getDay(isoToday());
-
-  let coach = day.coach;
-  if(!coach || !pinned){
-    const c = coachGenerateSimple();
-    coach = { date: isoToday(), ...c };
-    if(pinned){
-      day.coach = coach;
-      save();
-    }
-  }
-
-  $("coachMeta").textContent = pinned ? "Pinned snapshot" : "Live";
-  $("plan1").textContent = coach.truth;
-  $("plan2").textContent = coach.move;
-  $("plan3").textContent = coach.risk;
-  $("coachJarvis").textContent = "Close app. Do the next move.";
-}
-
-function fitCanvas(canvas){
-  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(1, Math.round(rect.width * dpr));
-  const h = Math.max(1, Math.round(rect.height * dpr));
-  if(canvas.width !== w || canvas.height !== h){
-    canvas.width = w; canvas.height = h;
-  }
-  return { w, h };
-}
-
-function buildBins(day){
-  const bins = {};
-  for(const c of COLORS) bins[c.id] = new Array(BINS).fill(0);
-
-  if(!day.wakeTs || !(day.events||[]).length) return { bins, start:null, end:null };
-
-  const start = day.wakeTs;
-  const end = (day.finalized && day.finalTs) ? day.finalTs : Math.max(now(), day.events.at(-1).t);
-  const span = Math.max(1, end - start);
-
-  for(const e of day.events){
-    const pos = clamp((e.t - start)/span, 0, 0.999999);
-    const i = Math.floor(pos * BINS);
-    if(bins[e.c]) bins[e.c][i] += 1;
-  }
-
-  for(const k in bins){
-    const a = bins[k];
-    for(let i=1;i<a.length-1;i++) a[i] = (a[i-1]*0.25 + a[i]*0.5 + a[i+1]*0.25);
-  }
-  for(const k in bins){
-    const a = bins[k];
-    const m = Math.max(1e-6, Math.max(...a));
-    for(let i=0;i<a.length;i++) a[i] = a[i]/m;
-  }
-
-  return { bins, start, end };
-}
-
-function hexToRgba(hex, a){
-  if(hex==="#0b0f17") return `rgba(234,240,255,${a*0.28})`;
-  const c = hex.replace("#","");
-  const r=parseInt(c.slice(0,2),16);
-  const g=parseInt(c.slice(2,4),16);
-  const b=parseInt(c.slice(4,6),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-function drawHolo(day){
-  const canvas = $("holoCanvas");
-  const ctx = canvas.getContext("2d");
-  const { w, h } = fitCanvas(canvas);
-  ctx.clearRect(0,0,w,h);
-
-  ctx.save();
-  ctx.globalAlpha = 0.22;
-  ctx.strokeStyle = "rgba(94,231,255,0.12)";
-  ctx.lineWidth = 1;
-  const gx = Math.max(26, Math.round(w/10));
-  const gy = Math.max(26, Math.round(h/10));
-  for(let x=0;x<w;x+=gx){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-  for(let y=0;y<h;y+=gy){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
-  ctx.restore();
-
-  const pad = Math.round(Math.min(w,h)*0.05);
-  const iw = w - pad*2;
-  const ih = h - pad*2;
-  const spineX = Math.round(pad + iw*0.52);
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(94,231,255,0.22)";
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(spineX,pad); ctx.lineTo(spineX,pad+ih); ctx.stroke();
-  ctx.restore();
-
-  const { bins, start, end } = buildBins(day);
-  const ghost = day.finalized ? buildGhostDay(day) : null;
-
-  const offsets = { mind:-34, deep:-18, cult:0, body:26, food:12, rest:-12, bad:40 };
-  const yAt = i => pad + (i/(BINS-1))*ih;
-
-  if(ghost){
-    const gBins = buildBins(ghost).bins;
-    ctx.save();
-    ctx.globalAlpha = 0.34;
-    ctx.setLineDash([8,10]);
-
-    for(const c of COLORS){
-      const a = gBins[c.id];
-      const off = offsets[c.id] ?? 0;
-      ctx.strokeStyle = hexToRgba(c.hex, 0.34);
-      ctx.lineWidth = 2;
-      ctx.lineCap="round"; ctx.lineJoin="round";
-      ctx.beginPath();
-      for(let i=0;i<a.length;i++){
-        const x = spineX + off + (a[i]-0.5)*30;
-        const y = yAt(i);
-        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  // -----------------------------
+  // State schema
+  // -----------------------------
+  function makeEmptyDay(dayKey) {
+    return {
+      dayKey,
+      wakeTs: 0,
+      finalized: false,
+      counts: { mind:0, deep:0, body:0, food:0, rest:0, bad:0 },
+      // event log for undo (stack)
+      log: [],
+      // computed (cached)
+      computed: {
+        S:0, F:0, R:0, D:0,
+        fatigue:0, readiness:0, growth:0,
+        cumGrowth:0
       }
-      ctx.stroke();
+    };
+  }
+
+  function normalizeStore(raw) {
+    const base = {
+      schemaVersion: SCHEMA_VERSION,
+      selectedDayKey: "",
+      days: []
+    };
+
+    if (!raw || typeof raw !== "object") return base;
+
+    const v = raw.schemaVersion || 0;
+    if (v !== SCHEMA_VERSION) {
+      // Only one schema so far; but we still sanitize.
     }
 
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
+    const days = Array.isArray(raw.days) ? raw.days : [];
+    const cleanDays = [];
+    for (const d of days) {
+      if (!d || typeof d !== "object") continue;
+      if (typeof d.dayKey !== "string") continue;
+      const cd = makeEmptyDay(d.dayKey);
 
-  for(const c of COLORS){
-    const a = bins[c.id];
-    const off = offsets[c.id] ?? 0;
+      cd.wakeTs = (typeof d.wakeTs === "number" && isFinite(d.wakeTs)) ? d.wakeTs : 0;
+      cd.finalized = !!d.finalized;
 
-    ctx.save();
-    ctx.strokeStyle = hexToRgba(c.hex, 0.18);
-    ctx.lineWidth = 10;
-    ctx.lineCap="round"; ctx.lineJoin="round";
-    ctx.beginPath();
-    for(let i=0;i<BINS;i++){
-      const x = spineX + off + (a[i]-0.5)*44;
-      const y = yAt(i);
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.strokeStyle = hexToRgba(c.hex, c.id==="rest" ? 0.86 : 0.78);
-    ctx.lineWidth = 3;
-    ctx.lineCap="round"; ctx.lineJoin="round";
-    ctx.beginPath();
-    for(let i=0;i<BINS;i++){
-      const x = spineX + off + (a[i]-0.5)*44;
-      const y = yAt(i);
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  const total = (day.events||[]).length;
-  const t0 = start ? new Date(start) : null;
-  const t1 = end ? new Date(end) : null;
-  $("holoMeta").textContent = total
-    ? `${total} taps · ${t0 ? t0.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—"} → ${t1 ? t1.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—"}`
-    : "No taps yet";
-}
-
-function mcForecast(days, horizon){
-  if(days.length < 7) return null;
-
-  const freq = Object.fromEntries(COLORS.map(c=>[c.id,0]));
-  let totalEv = 0;
-  for(const d of days){
-    for(const e of d.events||[]){
-      if(freq[e.c]!=null){ freq[e.c]++; totalEv++; }
-    }
-  }
-  const keys = COLORS.map(c=>c.id);
-  let sum = keys.reduce((a,k)=>a+freq[k],0);
-  if(sum<=0) sum=1;
-  const baseP = Object.fromEntries(keys.map(k=>[k,freq[k]/sum]));
-
-  const lens = days.map(d=>(d.events||[]).length).filter(n=>n>0);
-  const avgLen = Math.max(6, Math.round(lens.reduce((a,b)=>a+b,0)/Math.max(1,lens.length)));
-
-  function sample(){
-    let r = Math.random(), s=0;
-    for(const k of keys){
-      s += baseP[k];
-      if(r <= s) return k;
-    }
-    return keys.at(-1);
-  }
-
-  const tracks = [];
-  for(let r=0;r<MC_RUNS;r++){
-    const futureScores = [];
-    for(let i=0;i<horizon;i++){
-      const counts = Object.fromEntries(keys.map(k=>[k,0]));
-      for(let j=0;j<avgLen;j++) counts[sample()]++;
-      const fake = { events: Object.entries(counts).flatMap(([k,n])=>Array.from({length:n},(_,t)=>({c:k,t}))) };
-      futureScores.push(scoreDay(fake).score);
-    }
-    tracks.push(futureScores);
-  }
-
-  const median = [], p10 = [], p90 = [];
-  for(let i=0;i<horizon;i++){
-    const col = tracks.map(t=>t[i]).sort((a,b)=>a-b);
-    median.push(col[Math.floor(col.length*0.50)]);
-    p10.push(col[Math.floor(col.length*0.10)]);
-    p90.push(col[Math.floor(col.length*0.90)]);
-  }
-  return { median, p10, p90 };
-}
-
-function drawTrajectory(){
-  const canvas = $("trajCanvas");
-  const ctx = canvas.getContext("2d");
-  const { w, h } = fitCanvas(canvas);
-  ctx.clearRect(0,0,w,h);
-
-  const finals = finalizedDays(trajRange);
-  const pg = pGood();
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
-
-  if(!finals.length){
-    $("insMeta").textContent = `Need ${MIN_FINAL_FOR_PROB} finalized days`;
-    $("insJarvis").textContent = "Jarvis: finalize 7 päivää → trajectory herää.";
-    ctx.fillStyle="rgba(94,231,255,0.10)";
-    ctx.fillRect(0,0,w,h);
-    return;
-  }
-
-  const scores = finals.map(d=>scoreDay(d).score);
-  const forecast = mcForecast(finals, FORECAST_DAYS);
-
-  $("insMeta").textContent = pg==null
-    ? `Learning… need ${MIN_FINAL_FOR_PROB} finalized days`
-    : `P(good) ${pg}% · P(drift7) ${pd ?? "—"}% · You>Ghost ${py ?? "—"}%`;
-
-  $("insJarvis").textContent = pg==null
-    ? "Jarvis: kerää finalizea. Ennuste aktivoituu pian."
-    : "Jarvis: katso suuntaa, älä yksittäistä päivää.";
-
-  const all = [...scores];
-  if(forecast) all.push(...forecast.p10, ...forecast.p90);
-  const minS = Math.min(-2.8, ...all, 0);
-  const maxS = Math.max( 3.2, ...all, 0);
-
-  const pad = Math.round(Math.min(w,h)*0.08);
-  const iw = w - pad*2;
-  const ih = h - pad*2;
-  const axisX = Math.round(pad + iw*0.56);
-  const baseY = pad + ih;
-
-  const mapX = s => axisX + ((s - (minS+maxS)/2) / (maxS-minS)) * (iw*0.46);
-  const mapY = i => baseY - (i / Math.max(1, (scores.length-1))) * (ih*0.82);
-
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.strokeStyle = "rgba(94,231,255,0.12)";
-  ctx.lineWidth = 1;
-  const gx = Math.max(28, Math.round(w/9));
-  const gy = Math.max(28, Math.round(h/12));
-  for(let x=0;x<w;x+=gx){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-  for(let y=0;y<h;y+=gy){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
-  ctx.restore();
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(94,231,255,0.22)";
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(axisX,pad); ctx.lineTo(axisX,pad+ih); ctx.stroke();
-  ctx.restore();
-
-  if(forecast){
-    const startY = mapY(scores.length-1);
-    const fMapY = j => startY - ((j+1)/FORECAST_DAYS) * (ih*0.30);
-
-    ctx.save();
-    ctx.globalAlpha = 0.16;
-    ctx.fillStyle = "rgba(94,231,255,0.30)";
-    ctx.beginPath();
-    for(let j=0;j<FORECAST_DAYS;j++){
-      const y = fMapY(j);
-      const x = mapX(forecast.p10[j]);
-      if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    for(let j=FORECAST_DAYS-1;j>=0;j--){
-      const y = fMapY(j);
-      const x = mapX(forecast.p90[j]);
-      ctx.lineTo(x,y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.setLineDash([8,10]);
-    ctx.strokeStyle = "rgba(94,231,255,0.45)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for(let j=0;j<FORECAST_DAYS;j++){
-      const y = fMapY(j);
-      const x = mapX(forecast.median[j]);
-      if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(94,231,255,0.18)";
-  ctx.lineWidth = 12;
-  ctx.lineCap="round"; ctx.lineJoin="round";
-  ctx.beginPath();
-  for(let i=0;i<scores.length;i++){
-    const x = mapX(scores[i]), y = mapY(i);
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(94,231,255,0.88)";
-  ctx.lineWidth = 3;
-  ctx.lineCap="round"; ctx.lineJoin="round";
-  ctx.beginPath();
-  for(let i=0;i<scores.length;i++){
-    const x = mapX(scores[i]), y = mapY(i);
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-  ctx.restore();
-}
-
-function renderMonthCalendar(year, month){
-  const grid = $("calendarGrid");
-  grid.innerHTML = "";
-
-  const base = new Date(year, month, 1);
-  $("calTitle").textContent = base.toLocaleDateString(undefined,{month:"long",year:"numeric"});
-
-  const first = new Date(year, month, 1);
-  const startDay = (first.getDay()+6)%7;
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-
-  for(let i=0;i<startDay;i++){
-    const ph = document.createElement("div");
-    ph.className = "dayCell dim";
-    grid.appendChild(ph);
-  }
-
-  const todayIso = isoToday();
-
-  for(let d=1; d<=daysInMonth; d++){
-    const cell = document.createElement("div");
-    cell.className = "dayCell";
-
-    const num = document.createElement("div");
-    num.className = "dayNum";
-    num.textContent = d;
-
-    const bars = document.createElement("div");
-    bars.className = "dayBars";
-
-    const iso = new Date(year, month, d).toISOString().slice(0,10);
-    const day = app.days.find(x=>x.date===iso);
-
-    if(iso === todayIso) cell.classList.add("today");
-    if(iso === selectedDate) cell.classList.add("selected");
-
-    if(day && (day.events||[]).length){
-      const counts = scoreDay(day).counts;
-      for(const c of COLORS){
-        const v = counts[c.id] || 0;
-        if(v>0){
-          const dot = document.createElement("div");
-          dot.className = "dot";
-          dot.style.background = c.hex;
-          dot.style.opacity = Math.min(1, 0.35 + v*0.10);
-          bars.appendChild(dot);
-        }
+      const c = d.counts || {};
+      for (const t of TYPES) {
+        const n = c[t];
+        cd.counts[t] = (typeof n === "number" && isFinite(n)) ? clamp(Math.floor(n), 0, MAX_EVENTS_PER_DAY) : 0;
       }
+
+      const log = Array.isArray(d.log) ? d.log : [];
+      cd.log = log
+        .filter(e => e && typeof e === "object" && typeof e.type === "string" && TYPES.includes(e.type) && typeof e.ts === "number")
+        .slice(-MAX_EVENTS_PER_DAY);
+
+      // computed will be rebuilt
+      cleanDays.push(cd);
     }
 
-    cell.appendChild(num);
-    cell.appendChild(bars);
+    // Sort by dayKey asc
+    cleanDays.sort((a,b) => a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0);
 
-    cell.addEventListener("click", ()=>{
-      selectedDate = iso;
-      setView("today");
-      renderAll();
-    });
+    // Cap
+    while (cleanDays.length > MAX_DAYS) cleanDays.shift();
 
-    grid.appendChild(cell);
+    const selectedDayKey = (typeof raw.selectedDayKey === "string") ? raw.selectedDayKey : "";
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      selectedDayKey,
+      days: cleanDays
+    };
   }
 
-  $("calHint").textContent = "Tap päivä → näet sen päivän flow. Back → palaa tähän päivään.";
-}
-
-function setView(v){
-  $("viewToday").style.display = (v==="today") ? "" : "none";
-  $("viewCoach").style.display = (v==="coach") ? "" : "none";
-  $("viewTrajectory").style.display = (v==="traj") ? "" : "none";
-  $("viewCalendar").style.display = (v==="cal") ? "" : "none";
-
-  $("tabToday").setAttribute("aria-pressed", v==="today" ? "true":"false");
-  $("tabCoach").setAttribute("aria-pressed", v==="coach" ? "true":"false");
-  $("tabTrajectory").setAttribute("aria-pressed", v==="traj" ? "true":"false");
-  $("tabCalendar").setAttribute("aria-pressed", v==="cal" ? "true":"false");
-}
-
-function renderHeader(day, isToday){
-  $("hudDate").textContent = day.date;
-  $("hudWake").textContent = `Wake ${fmtTime(day.wakeTs)}`;
-  $("hudTaps").textContent = `Taps ${(day.events||[]).length}`;
-  $("hudState").textContent = day.finalized ? "LOCKED" : "LIVE";
-
-  const pg = pGood();
-  const py = pYouBeatsGhost();
-  $("hudOdds").textContent = pg==null ? "Odds —" : `P(good) ${pg}%`;
-  $("hudGhost").textContent = py==null ? "Ghost —" : `You>Ghost ${py}%`;
-
-  $("finalizeBtn").disabled = !isToday || day.finalized;
-  $("finalizeBtn").style.opacity = (!isToday || day.finalized) ? "0.45" : "1";
-
-  $("subLine").textContent = isToday
-    ? (day.finalized ? "Locked. Truth saved." : "TODAY — Tap what you actually did. Close app.")
-    : "History view. Read-only.";
-
-  $("holoTitle").textContent = isToday ? "Today Flow" : `Day Flow · ${day.date}`;
-  $("backToTodayBtn").style.display = isToday ? "none" : "inline-flex";
-}
-
-function addEvent(colorId){
-  const day = getDay(isoToday());
-  if(day.finalized) return;
-  const t = now();
-  if(!day.wakeTs) day.wakeTs = t;
-  day.events.push({ t, c:colorId });
-  day.events = day.events.slice(-MAX_EVENTS_PER_DAY);
-  save();
-  renderAll();
-  toast(colorId.toUpperCase());
-}
-
-function undoLast(){
-  const day = getDay(isoToday());
-  if(day.finalized) return;
-  if(!day.events.length) return;
-  day.events.pop();
-  if(!day.events.length){ day.wakeTs = null; day.finalTs = null; }
-  save();
-  renderAll();
-  toast("UNDO");
-}
-
-function finalizeDay(){
-  const day = getDay(isoToday());
-  if(day.finalized) return;
-  day.finalTs = now();
-  day.score = scoreDay(day).score;
-  day.insight = dailyJarvis(day);
-  day.finalized = true;
-  if(app.coachPins[day.date]) day.coach = { date: day.date, ...coachGenerateSimple() };
-  save();
-  renderAll();
-  toast("FINALIZED");
-}
-
-function renderJarvis(day){
-  $("jarvisLine").textContent = day.finalized ? (day.insight || dailyJarvis(day)) : dailyJarvis(day);
-}
-
-function renderAll(){
-  const isToday = (selectedDate === isoToday());
-  const day = getDay(selectedDate);
-
-  renderHeader(day, isToday);
-  renderJarvis(day);
-  drawHolo(day);
-
-  coachRender();
-  renderMonthCalendar(calCursor.y, calCursor.m);
-  drawTrajectory();
-
-  save();
-}
-
-function bindCards(){
-  $all(".card").forEach(btn=>{
-    const c = btn.dataset.c;
-    let pressTimer = null;
-    let longPressed = false;
-
-    btn.addEventListener("pointerdown", ()=>{
-      longPressed = false;
-      clearTimeout(pressTimer);
-      pressTimer = setTimeout(()=>{
-        longPressed = true;
-        undoLast();
-      }, LONG_PRESS_MS);
-    }, {passive:true});
-
-    const cancel = ()=>{ clearTimeout(pressTimer); pressTimer=null; };
-    btn.addEventListener("pointerup", cancel, {passive:true});
-    btn.addEventListener("pointercancel", cancel, {passive:true});
-    btn.addEventListener("pointerleave", cancel, {passive:true});
-
-    btn.addEventListener("click", ()=>{
-      if(longPressed) return;
-      addEvent(c);
-    });
-  });
-
-  $("finalizeBtn").addEventListener("click", finalizeDay);
-
-  $("backToTodayBtn").addEventListener("click", ()=>{
-    selectedDate = isoToday();
-    setView("today");
-    renderAll();
-  });
-
-  window.addEventListener("resize", ()=>{
-    drawHolo(getDay(selectedDate));
-    drawTrajectory();
-  }, {passive:true});
-}
-
-function bindTabs(){
-  $("tabToday").addEventListener("click", ()=>{ syncDayRollover(); setView("today"); renderAll(); });
-  $("tabCoach").addEventListener("click", ()=>{ syncDayRollover(); setView("coach"); renderAll(); });
-  $("tabTrajectory").addEventListener("click", ()=>{ syncDayRollover(); setView("traj"); renderAll(); });
-  $("tabCalendar").addEventListener("click", ()=>{ syncDayRollover(); setView("cal"); renderAll(); });
-}
-
-function bindCalendarNav(){
-  $("calPrev").addEventListener("click", ()=>{
-    calCursor.m--;
-    if(calCursor.m<0){ calCursor.m=11; calCursor.y--; }
-    renderAll();
-  });
-  $("calNext").addEventListener("click", ()=>{
-    calCursor.m++;
-    if(calCursor.m>11){ calCursor.m=0; calCursor.y++; }
-    renderAll();
-  });
-}
-
-function bindRange(){
-  $("range30").addEventListener("click", ()=>{
-    trajRange = 30;
-    $("range30").setAttribute("aria-pressed","true");
-    $("range90").setAttribute("aria-pressed","false");
-    renderAll();
-  });
-  $("range90").addEventListener("click", ()=>{
-    trajRange = 90;
-    $("range30").setAttribute("aria-pressed","false");
-    $("range90").setAttribute("aria-pressed","true");
-    renderAll();
-  });
-}
-
-function bindCoach(){
-  $("coachRefresh").addEventListener("click", ()=>{
-    const day = getDay(isoToday());
-    day.coach = null;
-    save();
-    renderAll();
-    toast("REFRESH");
-  });
-
-  $("coachPin").addEventListener("click", ()=>{
-    const d = isoToday();
-    app.coachPins[d] = !app.coachPins[d];
-    const day = getDay(d);
-    if(app.coachPins[d]) day.coach = { date:d, ...coachGenerateSimple() };
-    save();
-    renderAll();
-    toast(app.coachPins[d] ? "PINNED" : "UNPIN");
-  });
-}
-
-function buildLLMPayload(){
-  const finals = finalizedDays(30);
-  const pg = pGood();
-  const pd = pDrift7();
-  const py = pYouBeatsGhost();
-
-  const agg = Object.fromEntries(COLORS.map(c=>[c.id,0]));
-  for(const d of finals){
-    const r = scoreDay(d);
-    for(const k in r.counts) agg[k] += r.counts[k] || 0;
+  function loadStore() {
+    const raw = safeJSONParse(localStorage.getItem(STORAGE_KEY), null);
+    return normalizeStore(raw);
   }
-  const top = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
 
-  const driftSignals = [];
-  if(pd != null && pd > 45) driftSignals.push("high drift risk");
-  const badRate = finals.length ? finals.reduce((s,d)=>s+scoreDay(d).badFrac,0)/finals.length : 0;
-  if(badRate > 0.22) driftSignals.push("bad appears often");
+  function saveStore() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } catch {
+      // If storage fails, we still keep runtime state; no crash.
+    }
+  }
 
-  return { windowDays: finals.length, goodProbability: pg, drift7: pd, youBeatsGhost: py, dominantActions: top, driftSignals };
-}
+  let store = loadStore();
 
-function buildLLMPrompt(payload){
-  return [
-    "Behavior summary JSON below.",
-    "Output max 3 sentences:",
-    "1) Dominant pattern",
-    "2) Smallest leverage move",
-    "3) Warning only if drift signals exist",
-    "No fluff. No praise. No shame. Mention probabilities if present.",
-    "",
-    JSON.stringify(payload, null, 2)
-  ].join("\n");
-}
+  // -----------------------------
+  // Day management + rollover
+  // -----------------------------
+  function getOrCreateDay(dayKey) {
+    let d = store.days.find(x => x.dayKey === dayKey);
+    if (!d) {
+      d = makeEmptyDay(dayKey);
+      store.days.push(d);
+      store.days.sort((a,b) => a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0);
+      while (store.days.length > MAX_DAYS) store.days.shift();
+    }
+    return d;
+  }
 
-function bindLLM(){
-  const endpointEl = $("llmEndpoint");
-  const modelEl = $("llmModel");
-  const keyEl = $("llmKey");
-  const rememberEl = $("llmRemember");
+  function todayKey() {
+    return dayKeyFromDate(new Date());
+  }
 
-  endpointEl.value = app.llm.endpoint || "";
-  modelEl.value = app.llm.model || "";
-  rememberEl.checked = !!app.llm.remember;
+  function ensureTodaySelected() {
+    const tk = todayKey();
+    if (!store.selectedDayKey) store.selectedDayKey = tk;
 
-  function persist(){
-    if(rememberEl.checked){
-      app.llm.endpoint = endpointEl.value.trim();
-      app.llm.model = modelEl.value.trim();
-      app.llm.remember = true;
+    // If selected is in the future (clock weirdness), clamp to today.
+    if (store.selectedDayKey > tk) store.selectedDayKey = tk;
+
+    // Auto-rollover if last interaction was yesterday and user opens today
+    getOrCreateDay(tk);
+
+    // If selected day doesn't exist, create it.
+    getOrCreateDay(store.selectedDayKey);
+  }
+
+  function selectedDay() {
+    ensureTodaySelected();
+    return getOrCreateDay(store.selectedDayKey);
+  }
+
+  function setSelectedDay(dayKey) {
+    store.selectedDayKey = dayKey;
+    getOrCreateDay(dayKey);
+    saveStore();
+    renderAll();
+  }
+
+  function rolloverIfNeeded() {
+    const tk = todayKey();
+    if (!store.selectedDayKey) store.selectedDayKey = tk;
+    getOrCreateDay(tk);
+
+    // If currently viewing today (or app just opened), keep selection to today.
+    // If user is viewing a past day, do not yank them away.
+    const sel = store.selectedDayKey;
+    if (sel === tk) {
+      // nothing
     } else {
-      app.llm.remember = false;
-      delete app.llm.endpoint;
-      delete app.llm.model;
+      // If selected day was "yesterday but user never meant to browse", keep it.
+      // No forced jump.
     }
-    save();
+
+    saveStore();
   }
 
-  rememberEl.addEventListener("change", persist);
-  endpointEl.addEventListener("change", persist);
-  modelEl.addEventListener("change", persist);
+  // schedule a single timeout to next midnight to refresh dayKey (no loops)
+  let midnightTimer = null;
+  function scheduleMidnightRefresh() {
+    if (midnightTimer) clearTimeout(midnightTimer);
+    const d = new Date();
+    const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 5, 0);
+    const ms = Math.max(1000, next.getTime() - d.getTime());
+    midnightTimer = setTimeout(() => {
+      rolloverIfNeeded();
+      renderAll();
+      scheduleMidnightRefresh();
+    }, ms);
+  }
 
-  $("llmRun").addEventListener("click", async ()=>{
-    const endpoint = endpointEl.value.trim();
-    const model = modelEl.value.trim();
-    const key = keyEl.value.trim();
-    if(!endpoint || !model || !key){
-      $("llmOut").textContent = "LLM: tarvitset endpoint + model + api key.";
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      rolloverIfNeeded();
+      renderAll();
+    }
+    // animation loop handled separately
+  });
+
+  // -----------------------------
+  // Physics model
+  // -----------------------------
+  // Coefficients tuned for stability and realism (not hype).
+  const COEF = {
+    // signal formation (from counts -> 0..1)
+    scaleMind: 2.6,
+    scaleRest: 2.2,
+    scaleFood: 2.4,
+    scaleBody: 2.0,
+    scaleDeep: 2.0,
+    scaleBad: 1.7,
+
+    // state recurrences
+    k1S: 0.28,   // stimulus adds fatigue
+    k2R: 0.30,   // recovery reduces fatigue
+    k3D: 0.12,   // damage adds fatigue slightly
+    m1R: 0.30,   // recovery increases readiness
+    m2F: 0.22,   // fuel increases readiness
+    m3D: 0.28,   // damage reduces readiness
+    m4S: 0.12,   // stimulus reduces readiness short-term
+
+    // growth impulse (sigmoid)
+    aS: 1.10,
+    bF: 0.80,
+    cR: 0.95,
+    dD: 1.15,
+    eFat: 1.05,
+    bias: -0.25
+  };
+
+  function computeSignalsFromCounts(counts) {
+    const mind = softSat(counts.mind, COEF.scaleMind);
+    const rest = softSat(counts.rest, COEF.scaleRest);
+    const food = softSat(counts.food, COEF.scaleFood);
+    const body = softSat(counts.body, COEF.scaleBody);
+    const deep = softSat(counts.deep, COEF.scaleDeep);
+    const bad  = softSat(counts.bad,  COEF.scaleBad);
+
+    const S = clamp(0.62 * body + 0.48 * deep, 0, 1);
+    const F = clamp(food, 0, 1);
+    const R = clamp(0.55 * rest + 0.50 * mind, 0, 1);
+    const D = clamp(bad, 0, 1);
+    return { S, F, R, D };
+  }
+
+  function recomputeAllDays() {
+    // Iterate in chronological order and propagate fatigue/readiness.
+    let fatigue = 0.28;     // mild baseline
+    let readiness = 0.52;   // neutral baseline
+    let cumGrowth = 0;
+
+    for (const day of store.days) {
+      const sig = computeSignalsFromCounts(day.counts);
+
+      // Update fatigue: stimulus increases, recovery decreases, damage increases slightly
+      fatigue = clamp(fatigue + COEF.k1S * sig.S + COEF.k3D * sig.D - COEF.k2R * sig.R, 0, 1);
+
+      // Update readiness: recovery + fuel help; damage and acute stimulus reduce
+      readiness = clamp(readiness + COEF.m1R * sig.R + COEF.m2F * sig.F - COEF.m3D * sig.D - COEF.m4S * sig.S, 0, 1);
+
+      // Growth impulse: bounded + honest; fatigue penalizes signal.
+      const x = COEF.bias
+        + COEF.aS * sig.S
+        + COEF.bF * sig.F
+        + COEF.cR * sig.R
+        - COEF.dD * sig.D
+        - COEF.eFat * fatigue;
+
+      const growth = clamp(sigmoid(x), 0, 1);
+
+      // cumulative growth is subtle; accumulate slowly and saturate.
+      cumGrowth = clamp(cumGrowth + 0.06 * growth * (0.65 + 0.35 * readiness) * (1 - 0.55 * sig.D), 0, 1);
+
+      day.computed = {
+        S: sig.S, F: sig.F, R: sig.R, D: sig.D,
+        fatigue, readiness, growth,
+        cumGrowth
+      };
+    }
+  }
+
+  // -----------------------------
+  // Ghost generation
+  // -----------------------------
+  function ghostFromDay(day, badRate) {
+    // Remove Mind/Rest events, keep Body/Deep; amplify damage tendency.
+    const g = {
+      S: day.computed.S,
+      F: day.computed.F,
+      R: 0,
+      D: clamp(day.computed.D + 0.22 + 0.55 * badRate, 0, 1),
+      fatigue: 0,
+      readiness: 0,
+      growth: 0,
+      cumGrowth: 0
+    };
+    return g;
+  }
+
+  function simulateGhost(daysChrono) {
+    let fatigue = 0.35;
+    let readiness = 0.46;
+    let cumGrowth = 0;
+
+    const badVals = daysChrono.map(d => d.computed.D);
+    const badRate = badVals.length ? badVals.reduce((a,b)=>a+b,0) / badVals.length : 0.25;
+
+    const ghosts = [];
+    for (const day of daysChrono) {
+      const sig = ghostFromDay(day, badRate);
+
+      fatigue = clamp(fatigue + COEF.k1S * sig.S + COEF.k3D * sig.D - COEF.k2R * sig.R, 0, 1);
+      readiness = clamp(readiness + COEF.m1R * sig.R + COEF.m2F * sig.F - COEF.m3D * sig.D - COEF.m4S * sig.S, 0, 1);
+
+      const x = COEF.bias
+        + COEF.aS * sig.S
+        + COEF.bF * sig.F
+        + COEF.cR * sig.R
+        - COEF.dD * sig.D
+        - COEF.eFat * fatigue;
+
+      const growth = clamp(sigmoid(x), 0, 1);
+      cumGrowth = clamp(cumGrowth + 0.06 * growth * (0.65 + 0.35 * readiness) * (1 - 0.55 * sig.D), 0, 1);
+
+      ghosts.push({ ...sig, fatigue, readiness, growth, cumGrowth });
+    }
+    return ghosts;
+  }
+
+  // -----------------------------
+  // Bayesian probabilities (only after >= 7 finalized days)
+  // -----------------------------
+  function computeProbabilities() {
+    const finalized = store.days.filter(d => d.finalized);
+    if (finalized.length < EXPERIMENT_DAYS) {
+      return { ready:false };
+    }
+
+    // Use most recent 7 finalized days as the experiment window.
+    const window = finalized.slice(-EXPERIMENT_DAYS);
+
+    // P(Growth Day): define success if growth impulse clears an honest threshold.
+    const growthThresh = 0.58;
+    let growthSuccess = 0;
+    for (const d of window) if (d.computed.growth >= growthThresh) growthSuccess++;
+
+    // Beta prior for stability.
+    const a0 = 2, b0 = 2;
+    const pGrowth = betaMean(a0 + growthSuccess, b0 + (EXPERIMENT_DAYS - growthSuccess));
+
+    // P(Drift/Overtraining next 7):
+    // drift if fatigue high or readiness low at end of day (proxy), and worsening trend in window.
+    let driftEvents = 0;
+    for (let i=0;i<window.length;i++){
+      const d = window[i].computed;
+      const drift = (d.fatigue >= 0.72) || (d.readiness <= 0.30);
+      if (drift) driftEvents++;
+    }
+    // trend penalty: if readiness slope negative + fatigue slope positive, add one pseudo-event
+    const rSlope = window[window.length-1].computed.readiness - window[0].computed.readiness;
+    const fSlope = window[window.length-1].computed.fatigue - window[0].computed.fatigue;
+    const pseudo = (rSlope < -0.08 && fSlope > 0.08) ? 1 : 0;
+    const pDrift = betaMean(a0 + driftEvents + pseudo, b0 + (EXPERIMENT_DAYS - driftEvents));
+
+    // P(You > Ghost): compare cumulative growth and average readiness (ghost is overtrained).
+    const ghosts = simulateGhost(window);
+    const youScore = window[window.length-1].computed.cumGrowth * 0.70 + avg(window.map(d=>d.computed.readiness))*0.30 - avg(window.map(d=>d.computed.D))*0.10;
+    const ghostScore = ghosts[ghosts.length-1].cumGrowth * 0.70 + avg(ghosts.map(g=>g.readiness))*0.30 - avg(ghosts.map(g=>g.D))*0.10;
+
+    // Turn it into repeated “trials” by day: you “win” day if your growth >= ghost growth AND your readiness >= ghost readiness.
+    let wins = 0;
+    for (let i=0;i<window.length;i++){
+      if (window[i].computed.growth >= ghosts[i].growth && window[i].computed.readiness >= ghosts[i].readiness) wins++;
+    }
+    // If overall score loses, subtract a win (floored).
+    if (youScore + 1e-6 < ghostScore) wins = Math.max(0, wins - 1);
+
+    const pBeatGhost = betaMean(a0 + wins, b0 + (EXPERIMENT_DAYS - wins));
+
+    return {
+      ready:true,
+      pGrowth, pDrift, pBeatGhost,
+      window,
+      ghosts
+    };
+  }
+
+  function avg(arr) {
+    if (!arr.length) return 0;
+    let s=0; for (const x of arr) s+=x;
+    return s/arr.length;
+  }
+
+  // -----------------------------
+  // Monte Carlo forecast (30 days)
+  // -----------------------------
+  function betaFromMeanVar(mean, variance) {
+    // Solve alpha, beta from mean and var. Clamp variance for sanity.
+    mean = clamp(mean, 0.001, 0.999);
+    variance = clamp(variance, 1e-4, 0.08);
+    const common = mean*(1-mean)/variance - 1;
+    const a = clamp(mean * common, 0.25, 50);
+    const b = clamp((1-mean) * common, 0.25, 50);
+    return {a, b};
+  }
+
+  // Gamma sampler (Marsaglia & Tsang) for beta sampling
+  function randn() { // Box-Muller
+    let u=0, v=0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+  }
+  function gammaSample(k, theta=1) {
+    // k > 0
+    if (k < 1) {
+      // Johnk's generator via boosting
+      const u = Math.random();
+      return gammaSample(k + 1, theta) * Math.pow(u, 1/k);
+    }
+    const d = k - 1/3;
+    const c = 1 / Math.sqrt(9*d);
+    while (true) {
+      const x = randn();
+      let v = 1 + c*x;
+      if (v <= 0) continue;
+      v = v*v*v;
+      const u = Math.random();
+      if (u < 1 - 0.0331*(x*x)*(x*x)) return d*v*theta;
+      if (Math.log(u) < 0.5*x*x + d*(1 - v + Math.log(v))) return d*v*theta;
+    }
+  }
+  function betaSample(a,b) {
+    const x = gammaSample(a,1);
+    const y = gammaSample(b,1);
+    return x / (x + y);
+  }
+
+  function computeForecast() {
+    // Learn distribution of daily signals from finalized days.
+    const finalized = store.days.filter(d => d.finalized);
+    const recent = finalized.slice(-Math.max(7, Math.min(28, finalized.length)));
+
+    const base = recent.length ? recent : store.days.slice(-Math.min(14, store.days.length));
+
+    const seriesS = base.map(d=>d.computed.S);
+    const seriesF = base.map(d=>d.computed.F);
+    const seriesR = base.map(d=>d.computed.R);
+    const seriesD = base.map(d=>d.computed.D);
+
+    function meanVar(arr) {
+      if (!arr.length) return {m:0.35, v:0.03};
+      const m = avg(arr);
+      let v=0;
+      for (const x of arr) v += (x-m)*(x-m);
+      v = v / Math.max(1, arr.length-1);
+      v = clamp(v, 0.003, 0.06);
+      return {m, v};
+    }
+
+    const mvS = meanVar(seriesS);
+    const mvF = meanVar(seriesF);
+    const mvR = meanVar(seriesR);
+    const mvD = meanVar(seriesD);
+
+    const distS = betaFromMeanVar(mvS.m, mvS.v);
+    const distF = betaFromMeanVar(mvF.m, mvF.v);
+    const distR = betaFromMeanVar(mvR.m, mvR.v);
+    const distD = betaFromMeanVar(mvD.m, mvD.v);
+
+    // Starting state from latest day
+    const last = store.days.length ? store.days[store.days.length-1].computed : {fatigue:0.28, readiness:0.52, cumGrowth:0};
+    const startFatigue = last.fatigue ?? 0.28;
+    const startReadiness = last.readiness ?? 0.52;
+    const startCumGrowth = last.cumGrowth ?? 0.0;
+
+    const horizon = 30;
+    const runs = 180; // enough for stable quantiles without burning CPU
+    const readinessRuns = Array.from({length:horizon}, () => []);
+    const growthRuns = Array.from({length:horizon}, () => []);
+
+    for (let r=0;r<runs;r++){
+      let fatigue = startFatigue;
+      let readiness = startReadiness;
+      let cumGrowth = startCumGrowth;
+
+      for (let t=0;t<horizon;t++){
+        // Sample signals; add realistic coupling:
+        // high S tends to slightly increase D and require more R to prevent fatigue spiral.
+        let S = betaSample(distS.a, distS.b);
+        let F = betaSample(distF.a, distF.b);
+        let R = betaSample(distR.a, distR.b);
+        let D = betaSample(distD.a, distD.b);
+
+        D = clamp(D + 0.10*(S - 0.5), 0, 1);
+        R = clamp(R - 0.08*(S - 0.6), 0, 1); // big stimulus makes recovery "harder" if habits don't follow
+
+        fatigue = clamp(fatigue + COEF.k1S*S + COEF.k3D*D - COEF.k2R*R, 0, 1);
+        readiness = clamp(readiness + COEF.m1R*R + COEF.m2F*F - COEF.m3D*D - COEF.m4S*S, 0, 1);
+
+        const x = COEF.bias + COEF.aS*S + COEF.bF*F + COEF.cR*R - COEF.dD*D - COEF.eFat*fatigue;
+        const growth = clamp(sigmoid(x), 0, 1);
+
+        cumGrowth = clamp(cumGrowth + 0.06 * growth * (0.65 + 0.35 * readiness) * (1 - 0.55 * D), 0, 1);
+
+        readinessRuns[t].push(readiness);
+        growthRuns[t].push(growth);
+      }
+    }
+
+    function quantiles(arr) {
+      const a = arr.slice().sort((x,y)=>x-y);
+      const q = (p) => a[Math.floor(clamp(p,0,1)*(a.length-1))];
+      return { q10:q(0.10), q50:q(0.50), q90:q(0.90) };
+    }
+
+    const readinessQ = readinessRuns.map(quantiles);
+    const growthQ = growthRuns.map(quantiles);
+
+    return { horizon, readinessQ, growthQ };
+  }
+
+  // -----------------------------
+  // Interaction (tap / undo / finalize)
+  // -----------------------------
+  function canEditDay(day) {
+    // Only allow editing today and only if not finalized.
+    return day.dayKey === todayKey() && !day.finalized;
+  }
+
+  function logTap(type) {
+    rolloverIfNeeded();
+    const day = selectedDay();
+
+    if (!canEditDay(day)) return;
+
+    // First tap of day sets wake time
+    if (!day.wakeTs) day.wakeTs = now();
+
+    // hard cap events
+    const totalEvents = day.log.length;
+    if (totalEvents >= MAX_EVENTS_PER_DAY) return;
+
+    day.counts[type] = clamp(day.counts[type] + 1, 0, MAX_EVENTS_PER_DAY);
+    day.log.push({ type, ts: now() });
+
+    recomputeAllDays();
+    saveStore();
+    renderAll();
+
+    // Nudge holo about last event
+    holo.lastEventType = type;
+    holo.lastEventAt = performance.now();
+  }
+
+  function undoLast() {
+    rolloverIfNeeded();
+    const day = selectedDay();
+    if (!canEditDay(day)) return;
+    const e = day.log.pop();
+    if (!e) return;
+    if (day.counts[e.type] > 0) day.counts[e.type]--;
+
+    recomputeAllDays();
+    saveStore();
+    renderAll();
+
+    holo.lastEventType = "undo";
+    holo.lastEventAt = performance.now();
+  }
+
+  function finalizeDay() {
+    rolloverIfNeeded();
+    const day = selectedDay();
+    if (day.finalized) {
+      // idempotent
+      return;
+    }
+    // Only allow finalizing today (keeps it clean).
+    if (day.dayKey !== todayKey()) return;
+
+    day.finalized = true;
+
+    // Trim log (still keep for undo? finalized means no undo)
+    day.log = day.log.slice(-MAX_EVENTS_PER_DAY);
+
+    recomputeAllDays();
+    saveStore();
+    renderAll();
+
+    holo.lastEventType = "finalize";
+    holo.lastEventAt = performance.now();
+  }
+
+  // long-press detection for undo (on any tap button)
+  function attachLongPressUndo(btn) {
+    let timer = null;
+    let moved = false;
+
+    const start = (e) => {
+      if (btn.disabled) return;
+      moved = false;
+      // prevent long-press context menu on mobile
+      e.preventDefault?.();
+      timer = setTimeout(() => {
+        timer = null;
+        undoLast();
+        // subtle haptic if available
+        if (navigator.vibrate) navigator.vibrate(12);
+      }, 420);
+    };
+
+    const end = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const move = () => { moved = true; if (timer) { clearTimeout(timer); timer=null; } };
+
+    btn.addEventListener("pointerdown", start, {passive:false});
+    btn.addEventListener("pointerup", end);
+    btn.addEventListener("pointercancel", end);
+    btn.addEventListener("pointermove", move);
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  // -----------------------------
+  // Coach
+  // -----------------------------
+  function buildCoach(day) {
+    const days = store.days;
+    const i = days.findIndex(d => d.dayKey === day.dayKey);
+    const d = day.computed;
+
+    // Dominant pattern: stress vs recovery balance
+    const balance = (d.R + 0.6*d.F) - (d.S + 0.9*d.D);
+    let truth;
+    if (balance > 0.25) truth = "Recovery is ahead of stress. You’re banking readiness.";
+    else if (balance < -0.25) truth = "Stress is ahead of recovery. You’re spending readiness.";
+    else truth = "Stress and recovery are near-balanced. Small shifts will show fast.";
+
+    // NEXT: smallest leverage action tomorrow
+    // choose among Mind/Rest/Food based on deficits and what harms growth.
+    const wants = [
+      {k:"rest", score:(0.55 - d.R) + 0.35*d.fatigue},
+      {k:"food", score:(0.55 - d.F) + 0.15*d.S},
+      {k:"mind", score:(0.48 - d.R) + 0.20*d.D},
+      {k:"bad",  score:(d.D - 0.18) + 0.25*d.fatigue}
+    ].sort((a,b)=>b.score-a.score);
+
+    let next;
+    if (wants[0].k === "rest") next = "Add one recovery hit: sleep/breath/deload. Protect tomorrow’s readiness.";
+    else if (wants[0].k === "food") next = "Fuel earlier: protein + calories near training. Make stimulus worth it.";
+    else if (wants[0].k === "mind") next = "One parasympathetic shift: slow exhale / walk / downshift. Keep signals clean.";
+    else next = "Delete one damage event. It’s stealing both readiness and growth signal.";
+
+    // RISK only if drift rising
+    let riskShow = false;
+    let risk = "—";
+    const drift = (d.fatigue >= 0.72) || (d.readiness <= 0.30);
+
+    // trend over last 4 days (if available)
+    const slice = days.slice(Math.max(0, i-3), i+1);
+    if (slice.length >= 3) {
+      const rSlope = slice[slice.length-1].computed.readiness - slice[0].computed.readiness;
+      const fSlope = slice[slice.length-1].computed.fatigue - slice[0].computed.fatigue;
+      if (drift || (rSlope < -0.07 && fSlope > 0.07)) {
+        riskShow = true;
+        if (d.fatigue >= 0.80) risk = "Fatigue is high. Reduce stimulus or add recovery before it turns into regression.";
+        else if (d.readiness <= 0.25) risk = "Readiness is low. Expect weaker sessions unless recovery rises first.";
+        else risk = "Trend suggests drift. Keep stimulus, but pay the recovery bill immediately.";
+      }
+    } else if (drift) {
+      riskShow = true;
+      risk = "Drift detected. Recovery is the limiter, not willpower.";
+    }
+
+    return { truth, next, riskShow, risk };
+  }
+
+  // -----------------------------
+  // Rendering
+  // -----------------------------
+  function pct(x) { return `${Math.round(clamp(x,0,1)*100)}%`; }
+
+  function renderTodayPanel() {
+    const tk = todayKey();
+    const sel = selectedDay();
+    const isToday = sel.dayKey === tk;
+
+    // Header date
+    todayDateEl.textContent = isToday ? `Today • ${formatShortDate(sel.dayKey)}` : formatShortDate(sel.dayKey);
+
+    wakeLabelEl.textContent = `Wake: ${sel.wakeTs ? formatTime(sel.wakeTs) : "—"}`;
+    lockLabelEl.textContent = sel.finalized ? "Finalized" : (canEditDay(sel) ? "Unlocked" : "View-only");
+
+    dayPillEl.textContent = isToday
+      ? (sel.finalized ? "TODAY • LOCKED" : "TODAY • LIVE")
+      : (sel.finalized ? "PAST • LOCKED" : "PAST • VIEW");
+    dayPillEl.style.background = sel.finalized
+      ? "rgba(80,255,190,0.07)"
+      : "rgba(90,140,255,0.08)";
+    dayPillEl.style.borderColor = sel.finalized
+      ? "rgba(80,255,190,0.22)"
+      : "rgba(90,140,255,0.22)";
+
+    // Enable/disable tap buttons
+    const editable = canEditDay(sel);
+    finalizeBtn.disabled = !(isToday && !sel.finalized);
+    for (const btn of tapGrid.querySelectorAll(".tap")) btn.disabled = !editable;
+
+    // Metrics
+    const c = sel.computed;
+    readinessText.textContent = pct(c.readiness);
+    fatigueText.textContent = pct(c.fatigue);
+    growthText.textContent = pct(c.growth);
+
+    readinessFill.style.width = pct(c.readiness);
+    fatigueFill.style.width = pct(c.fatigue);
+    growthFill.style.width = pct(c.growth);
+
+    // Coach
+    const coach = buildCoach(sel);
+    coachTruth.textContent = coach.truth;
+    coachNext.textContent = coach.next;
+    if (coach.riskShow) {
+      coachRiskRow.style.display = "flex";
+      coachRisk.textContent = coach.risk;
+    } else {
+      coachRiskRow.style.display = "none";
+      coachRisk.textContent = "—";
+    }
+
+    // Holo meta
+    const sig = `S ${pct(c.S)} • F ${pct(c.F)} • R ${pct(c.R)} • D ${pct(c.D)}`;
+    holoMeta.textContent = sel.finalized ? `Locked day • ${sig}` : `Live day • ${sig}`;
+  }
+
+  function renderCalendar() {
+    // last 30 days footprint, including today
+    calendarEl.innerHTML = "";
+    const d = new Date();
+    const daysToShow = 30;
+    const keys = [];
+    for (let i=daysToShow-1;i>=0;i--){
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()-i, 12,0,0,0);
+      keys.push(dayKeyFromDate(x));
+    }
+    const selKey = store.selectedDayKey || todayKey();
+
+    for (const key of keys) {
+      const day = store.days.find(dd => dd.dayKey === key) || makeEmptyDay(key);
+      const cell = document.createElement("div");
+      cell.className = "daycell" + (key === selKey ? " selected" : "");
+      const small = document.createElement("div");
+      small.className = "d";
+      const dateObj = parseDayKey(key);
+      small.textContent = `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+      const m = document.createElement("div");
+      m.className = "m";
+      const f = document.createElement("div");
+      f.className = "f";
+
+      const intensity = clamp(day.computed ? day.computed.growth : 0, 0, 1);
+      f.style.width = `${Math.round(intensity*100)}%`;
+      m.appendChild(f);
+
+      const lock = document.createElement("div");
+      lock.className = "lock";
+      lock.textContent = day.finalized ? "✓" : "";
+
+      cell.appendChild(small);
+      cell.appendChild(m);
+      cell.appendChild(lock);
+
+      cell.addEventListener("click", () => {
+        setSelectedDay(key);
+      });
+
+      calendarEl.appendChild(cell);
+    }
+  }
+
+  function renderProbabilitiesAndTraj() {
+    const probs = computeProbabilities();
+    if (!probs.ready) {
+      probPill.textContent = `Need ${EXPERIMENT_DAYS} finalized days`;
+      pGrowthEl.textContent = "—";
+      pDriftEl.textContent = "—";
+      pBeatGhostEl.textContent = "—";
+      youGhostPctEl.textContent = "—";
+      drawTrajectory(null);
       return;
     }
 
-    const payload = buildLLMPayload();
-    const prompt = buildLLMPrompt(payload);
+    probPill.textContent = `Using latest ${EXPERIMENT_DAYS} finalized days`;
+    pGrowthEl.textContent = `${Math.round(probs.pGrowth*100)}%`;
+    pDriftEl.textContent = `${Math.round(probs.pDrift*100)}%`;
+    pBeatGhostEl.textContent = `${Math.round(probs.pBeatGhost*100)}%`;
 
-    $("llmOut").textContent = "LLM: running…";
-    try{
-      const res = await fetch(endpoint, {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "Authorization": `Bearer ${key}`
-        },
-        body: JSON.stringify({
-          model,
-          messages:[
-            { role:"system", content:"You are a calm, precise coach. Output max 3 sentences. No fluff. No praise. No shame." },
-            { role:"user", content: prompt }
-          ],
-          temperature: 0.3
-        })
-      });
+    youGhostPctEl.textContent = `${Math.round(probs.pBeatGhost*100)}%`;
 
-      if(!res.ok){
-        const t = await res.text();
-        $("llmOut").textContent = `LLM error: ${res.status} ${t.slice(0,200)}`;
-        return;
+    // Draw fog cone
+    const forecast = computeForecast();
+    drawTrajectory(forecast);
+  }
+
+  function renderPlaybackControls() {
+    // slider range always 1..7, but label depends on available days
+    const finalized = store.days.filter(d => d.finalized);
+    const window = finalized.slice(-EXPERIMENT_DAYS);
+    pbSlider.max = String(EXPERIMENT_DAYS);
+    pbSlider.min = "1";
+    pbSlider.step = "1";
+
+    // default to latest day in window
+    if (!pbSlider.value || parseInt(pbSlider.value,10) > EXPERIMENT_DAYS) pbSlider.value = String(EXPERIMENT_DAYS);
+
+    const idx = clamp(parseInt(pbSlider.value,10)-1, 0, EXPERIMENT_DAYS-1);
+    const d = window[idx];
+    pbLabel.textContent = d ? `${idx+1}/${EXPERIMENT_DAYS} • ${formatShortDate(d.dayKey)}` : `${idx+1}/${EXPERIMENT_DAYS}`;
+  }
+
+  function renderAll() {
+    ensureTodaySelected();
+    recomputeAllDays();
+
+    renderTodayPanel();
+    renderCalendar();
+    renderProbabilitiesAndTraj();
+    renderPlaybackControls();
+
+    // Holo target state
+    holo.setTargetFromSelection();
+  }
+
+  // -----------------------------
+  // Hologram renderer (Canvas2D)
+  // -----------------------------
+  const holo = {
+    ctx: holoCanvas.getContext("2d"),
+    w: 720, h: 720,
+    t0: 0,
+    running: false,
+    lastEventType: "",
+    lastEventAt: 0,
+
+    // display mode
+    playbackOn: false,
+    playbackIndex: 6, // 0..6
+
+    // state (smoothed)
+    glow: 0.4,
+    fatigue: 0.3,
+    growth: 0.3,
+    cumGrowth: 0.1,
+    S: 0.3, F: 0.3, R: 0.3, D: 0.2,
+
+    // target
+    tg: {},
+
+    particles: [],
+
+    init() {
+      this.w = holoCanvas.width;
+      this.h = holoCanvas.height;
+
+      // seed particles
+      for (let i=0;i<120;i++){
+        this.particles.push(this.makeParticle(Math.random()));
+      }
+    },
+
+    makeParticle(seed) {
+      // pick a path lane: 0 stimulus, 1 fuel, 2 recovery, 3 damage
+      const lane = Math.floor(Math.random()*4);
+      return {
+        lane,
+        p: Math.random(),           // progress 0..1
+        v: lerp(0.18, 0.55, Math.random()),
+        a: lerp(0.7, 1.0, Math.random()),
+        wob: lerp(0.0, 1.0, Math.random()),
+        phase: Math.random()*Math.PI*2,
+        life: lerp(0.4, 1.0, Math.random()),
+        seed
+      };
+    },
+
+    setTargetFromSelection() {
+      const sel = selectedDay();
+
+      // If playback is on and we have enough finalized days, override selection visuals
+      let dayForViz = sel;
+      let ghosts = null;
+      let ghostDay = null;
+
+      const probs = computeProbabilities();
+      if (this.playbackOn && probs.ready) {
+        const window = probs.window;
+        const idx = clamp(this.playbackIndex, 0, window.length-1);
+        dayForViz = window[idx];
+        ghosts = probs.ghosts;
+        ghostDay = ghosts ? ghosts[idx] : null;
+        pbModePill.textContent = dayForViz.finalized ? "PLAYBACK • LOCKED" : "PLAYBACK";
+      } else {
+        pbModePill.textContent = "PLAYBACK";
       }
 
-      const json = await res.json();
-      const text = json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.text ?? null;
-      $("llmOut").textContent = text ? text.trim() : "LLM: empty response.";
-      if(rememberEl.checked) persist();
-    }catch(e){
-      $("llmOut").textContent = `LLM failed: ${String(e).slice(0,180)}`;
-    }
-  });
-}
+      const c = dayForViz.computed;
 
-function finalDiagnostic(){
-  const ids = ["finalizeBtn","holoCanvas","trajCanvas","tabToday","tabCoach","tabTrajectory","tabCalendar","calendarGrid","coachRefresh","coachPin","llmRun","llmEndpoint","llmModel","llmKey","llmRemember"];
-  const miss = ids.filter(id=>!$(id));
-  if(miss.length) return { ok:false, msg:`Missing DOM: ${miss[0]}` };
-  try{
-    const t="__pb_test__";
-    localStorage.setItem(t,"1");
-    localStorage.removeItem(t);
-  }catch{
-    return { ok:false, msg:"LocalStorage not available" };
+      this.tg = {
+        glow: c.readiness,
+        fatigue: c.fatigue,
+        growth: c.growth,
+        cumGrowth: c.cumGrowth,
+        S: c.S, F: c.F, R: c.R, D: c.D,
+        ghost: ghostDay
+      };
+    },
+
+    tick(ts) {
+      if (!this.running) return;
+      if (!this.t0) this.t0 = ts;
+      const dt = Math.min(0.033, (ts - this.t0) / 1000);
+      this.t0 = ts;
+
+      // Smooth state
+      const s = 1 - Math.pow(0.001, dt); // responsive but stable
+      const tg = this.tg || {};
+      this.glow = lerp(this.glow, tg.glow ?? this.glow, s);
+      this.fatigue = lerp(this.fatigue, tg.fatigue ?? this.fatigue, s);
+      this.growth = lerp(this.growth, tg.growth ?? this.growth, s);
+      this.cumGrowth = lerp(this.cumGrowth, tg.cumGrowth ?? this.cumGrowth, s);
+      this.S = lerp(this.S, tg.S ?? this.S, s);
+      this.F = lerp(this.F, tg.F ?? this.F, s);
+      this.R = lerp(this.R, tg.R ?? this.R, s);
+      this.D = lerp(this.D, tg.D ?? this.D, s);
+
+      // Particle dynamics
+      const stim = this.S;
+      const fuel = this.F;
+      const rec = this.R;
+      const dmg = this.D;
+      const jitter = 0.7*this.fatigue + 0.55*dmg;
+
+      for (const p of this.particles) {
+        let drive = 0.35;
+        if (p.lane === 0) drive = lerp(0.18, 0.85, stim);
+        if (p.lane === 1) drive = lerp(0.16, 0.75, fuel);
+        if (p.lane === 2) drive = lerp(0.16, 0.85, rec);
+        if (p.lane === 3) drive = lerp(0.08, 0.65, dmg);
+
+        p.p += dt * p.v * drive;
+        p.phase += dt * (1.2 + 2.0*jitter) * (0.6 + 0.8*p.wob);
+
+        if (p.p >= 1) {
+          // respawn with same lane preference, but allow lane shifting based on latest tap
+          const bias = this.lastEventType;
+          if (bias === "body" || bias === "deep") p.lane = (Math.random()<0.72) ? 0 : p.lane;
+          else if (bias === "food") p.lane = (Math.random()<0.72) ? 1 : p.lane;
+          else if (bias === "rest" || bias === "mind") p.lane = (Math.random()<0.72) ? 2 : p.lane;
+          else if (bias === "bad") p.lane = (Math.random()<0.72) ? 3 : p.lane;
+
+          p.p = 0;
+          p.life = lerp(0.4, 1.0, Math.random());
+          p.v = lerp(0.18, 0.55, Math.random());
+          p.a = lerp(0.6, 1.0, Math.random());
+          p.wob = lerp(0.0, 1.0, Math.random());
+        }
+      }
+
+      this.draw(ts);
+      requestAnimationFrame((t)=>this.tick(t));
+    },
+
+    start() {
+      if (this.running) return;
+      this.running = true;
+      this.t0 = 0;
+      requestAnimationFrame((t)=>this.tick(t));
+    },
+
+    stop() {
+      this.running = false;
+      this.t0 = 0;
+    },
+
+    draw(ts) {
+      const ctx = this.ctx;
+      const w = this.w, h = this.h;
+
+      // background
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle = "rgba(0,0,0,0)";
+      ctx.fillRect(0,0,w,h);
+
+      // base haze
+      const g = ctx.createRadialGradient(w*0.5, h*0.25, 40, w*0.5, h*0.5, h*0.7);
+      const glowAmt = clamp(this.glow, 0, 1);
+      const dmgAmt = clamp(this.D, 0, 1);
+      g.addColorStop(0, `rgba(90,140,255,${0.10 + 0.18*glowAmt})`);
+      g.addColorStop(0.55, `rgba(80,255,190,${0.05 + 0.12*glowAmt})`);
+      g.addColorStop(1, `rgba(255,80,110,${0.03 + 0.08*dmgAmt})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,w,h);
+
+      // silhouette transform (posture/expansion vs compression)
+      const expand = 1 + 0.035*glowAmt - 0.028*this.fatigue;
+      const sway = 0.010*Math.sin(ts*0.0013) * (0.6 + 0.8*(1-this.fatigue));
+      const jitter = (0.9*this.fatigue + 0.7*this.D);
+      const jx = (Math.sin(ts*0.017) + Math.sin(ts*0.011))*0.8*jitter;
+      const jy = (Math.cos(ts*0.015) + Math.sin(ts*0.009))*0.8*jitter;
+
+      ctx.save();
+      ctx.translate(w*0.5 + jx, h*0.52 + jy);
+      ctx.scale(expand, expand);
+      ctx.rotate(sway);
+
+      // draw aura ring around muscle zones (cumulative growth subtle)
+      this.drawAura(ctx);
+
+      // draw silhouette
+      this.drawSilhouette(ctx);
+
+      // draw energy flows on top (through-body lines)
+      this.drawFlows(ctx, ts);
+
+      // draw ghost overlay (dashed & distorted) during playback if available
+      if (this.playbackOn && this.tg && this.tg.ghost) {
+        this.drawGhostOverlay(ctx, ts, this.tg.ghost);
+      }
+
+      ctx.restore();
+
+      // event pulse
+      this.drawEventPulse(ctx, ts);
+    },
+
+    drawSilhouette(ctx) {
+      const glowAmt = clamp(this.glow, 0, 1);
+      const fat = clamp(this.fatigue, 0, 1);
+      const dmg = clamp(this.D, 0, 1);
+
+      // base hologram stroke
+      const baseAlpha = 0.55 + 0.22*glowAmt - 0.22*dmg - 0.12*fat;
+      const glowAlpha = 0.20 + 0.35*glowAmt;
+
+      // outer glow
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = `rgba(90,140,255,${glowAlpha})`;
+      ctx.shadowColor = `rgba(80,255,190,${0.18 + 0.22*glowAmt})`;
+      ctx.shadowBlur = 24 + 22*glowAmt;
+
+      this.pathBody(ctx, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      // inner lines
+      ctx.save();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = `rgba(210,230,255,${baseAlpha})`;
+      ctx.shadowBlur = 0;
+      this.pathBody(ctx, 0);
+      ctx.stroke();
+
+      // scanlines
+      ctx.globalAlpha = 0.28 + 0.22*glowAmt;
+      ctx.strokeStyle = `rgba(80,255,190,${0.18 + 0.22*glowAmt})`;
+      ctx.lineWidth = 1;
+      for (let y=-250; y<=260; y+=10) {
+        const wob = (Math.sin((y*0.06)+performance.now()*0.002) + Math.sin((y*0.02)+performance.now()*0.001))* (0.6 + 1.6*fat);
+        ctx.beginPath();
+        ctx.moveTo(-150 + wob, y);
+        ctx.lineTo(150 + wob, y);
+        ctx.stroke();
+      }
+
+      // damage shadow noise
+      if (dmg > 0.02) {
+        ctx.globalAlpha = 0.18 + 0.35*dmg;
+        for (let i=0;i<48;i++){
+          const x = lerp(-150, 150, Math.random());
+          const y = lerp(-260, 260, Math.random());
+          const r = lerp(4, 18, Math.random())*(0.6 + 1.2*dmg);
+          ctx.fillStyle = `rgba(120,60,160,${0.10 + 0.28*dmg})`;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    },
+
+    pathBody(ctx, offset) {
+      // Stylized bodybuilding silhouette path around origin.
+      // Segments: head/torso/arms/legs (not photo-real; truthfully "signal vessel")
+      ctx.beginPath();
+
+      // head
+      ctx.moveTo(0, -250);
+      ctx.bezierCurveTo(30, -250, 44, -226, 44, -206);
+      ctx.bezierCurveTo(44, -178, 22, -162, 0, -162);
+      ctx.bezierCurveTo(-22, -162, -44, -178, -44, -206);
+      ctx.bezierCurveTo(-44, -226, -30, -250, 0, -250);
+
+      // neck -> shoulders
+      ctx.moveTo(-32, -162);
+      ctx.bezierCurveTo(-46, -150, -64, -138, -92, -132);
+      ctx.bezierCurveTo(-128, -125, -150, -110, -160, -92);
+
+      // left arm (biceps/triceps mass)
+      ctx.bezierCurveTo(-176, -60, -165, -20, -150, 10);
+      ctx.bezierCurveTo(-142, 28, -145, 46, -156, 60);
+      ctx.bezierCurveTo(-170, 78, -160, 104, -140, 122);
+      ctx.bezierCurveTo(-118, 142, -104, 170, -110, 200);
+      ctx.bezierCurveTo(-114, 218, -102, 232, -88, 236);
+
+      // left hip -> leg
+      ctx.moveTo(-92, -132);
+      ctx.bezierCurveTo(-118, -70, -112, -16, -96, 34);
+      ctx.bezierCurveTo(-84, 72, -76, 106, -86, 140);
+      ctx.bezierCurveTo(-104, 196, -112, 230, -98, 258);
+      ctx.bezierCurveTo(-88, 278, -68, 290, -46, 294);
+      ctx.bezierCurveTo(-26, 298, -16, 286, -18, 270);
+      ctx.bezierCurveTo(-24, 236, -24, 210, -20, 170);
+      ctx.bezierCurveTo(-16, 130, -10, 98, -6, 60);
+      ctx.bezierCurveTo(-2, 20, -8, -26, -24, -78);
+
+      // torso centerline to right
+      ctx.moveTo(32, -162);
+      ctx.bezierCurveTo(46, -150, 64, -138, 92, -132);
+      ctx.bezierCurveTo(128, -125, 150, -110, 160, -92);
+
+      // right arm
+      ctx.bezierCurveTo(176, -60, 165, -20, 150, 10);
+      ctx.bezierCurveTo(142, 28, 145, 46, 156, 60);
+      ctx.bezierCurveTo(170, 78, 160, 104, 140, 122);
+      ctx.bezierCurveTo(118, 142, 104, 170, 110, 200);
+      ctx.bezierCurveTo(114, 218, 102, 232, 88, 236);
+
+      // right hip -> leg
+      ctx.moveTo(92, -132);
+      ctx.bezierCurveTo(118, -70, 112, -16, 96, 34);
+      ctx.bezierCurveTo(84, 72, 76, 106, 86, 140);
+      ctx.bezierCurveTo(104, 196, 112, 230, 98, 258);
+      ctx.bezierCurveTo(88, 278, 68, 290, 46, 294);
+      ctx.bezierCurveTo(26, 298, 16, 286, 18, 270);
+      ctx.bezierCurveTo(24, 236, 24, 210, 20, 170);
+      ctx.bezierCurveTo(16, 130, 10, 98, 6, 60);
+      ctx.bezierCurveTo(2, 20, 8, -26, 24, -78);
+
+      // chest/abs outline (inner)
+      ctx.moveTo(-92, -132);
+      ctx.bezierCurveTo(-60, -150, -26, -158, 0, -162);
+      ctx.bezierCurveTo(26, -158, 60, -150, 92, -132);
+      ctx.bezierCurveTo(108, -90, 98, -40, 84, 0);
+      ctx.bezierCurveTo(72, 32, 64, 66, 58, 98);
+      ctx.bezierCurveTo(44, 168, 30, 206, 0, 210);
+      ctx.bezierCurveTo(-30, 206, -44, 168, -58, 98);
+      ctx.bezierCurveTo(-64, 66, -72, 32, -84, 0);
+      ctx.bezierCurveTo(-98, -40, -108, -90, -92, -132);
+    },
+
+    drawAura(ctx) {
+      // thin aura rings around muscle zones: chest/back/legs/arms/core
+      const cg = clamp(this.cumGrowth, 0, 1);
+      const glowAmt = clamp(this.glow, 0, 1);
+
+      const alpha = 0.05 + 0.22*cg;
+      const width = 1.2 + 2.2*cg;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineWidth = width;
+
+      const zones = [
+        {x:0, y:-85, r:92, a:alpha},     // chest/back
+        {x:0, y:35,  r:74, a:alpha*0.9}, // core
+        {x:-112, y:-50, r:50, a:alpha*0.8}, // left arm
+        {x:112,  y:-50, r:50, a:alpha*0.8}, // right arm
+        {x:-45, y:210, r:60, a:alpha*0.7}, // left leg
+        {x:45,  y:210, r:60, a:alpha*0.7}  // right leg
+      ];
+
+      for (const z of zones) {
+        ctx.strokeStyle = `rgba(255,255,255,${z.a * (0.55 + 0.45*glowAmt)})`;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.r, 0, Math.PI*2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    },
+
+    flowColor(lane) {
+      // Stimulus red/orange, Fuel white/green, Recovery green/blue, Damage black/purple
+      if (lane === 0) return [255, 92, 70];
+      if (lane === 1) return [190, 255, 220];
+      if (lane === 2) return [80, 190, 255];
+      return [160, 85, 220];
+    },
+
+    laneStrength(lane) {
+      if (lane === 0) return this.S;
+      if (lane === 1) return this.F;
+      if (lane === 2) return this.R;
+      return this.D;
+    },
+
+    pathPoint(lane, p) {
+      // p: 0..1. Predefined energy routes through the body.
+      // origin coordinates around silhouette.
+      const t = p;
+
+      // lanes:
+      // 0 stimulus: legs->torso->arms
+      // 1 fuel: gut->torso->muscles
+      // 2 recovery: lungs->heart->whole body
+      // 3 damage: noisy shadow traveling downward
+      if (lane === 0) {
+        const x = lerp(-40, 120, t) + 20*Math.sin(t*5.2);
+        const y = lerp(260, -20, t) + 18*Math.sin(t*3.9);
+        return {x, y};
+      }
+      if (lane === 1) {
+        const x = 12*Math.sin(t*6.0) + lerp(-30, 30, Math.sin(t*Math.PI));
+        const y = lerp(130, -90, t) + 14*Math.sin(t*5.4);
+        return {x, y};
+      }
+      if (lane === 2) {
+        const x = 90*Math.sin(t*Math.PI*2) * 0.33;
+        const y = lerp(-160, 240, t) + 12*Math.cos(t*7.0);
+        return {x, y};
+      }
+      // damage
+      const x = lerp(70, -90, t) + 26*Math.sin(t*9.2);
+      const y = lerp(-200, 280, t) + 28*Math.cos(t*8.7);
+      return {x, y};
+    },
+
+    drawFlows(ctx, ts) {
+      const fat = clamp(this.fatigue, 0, 1);
+      const dmg = clamp(this.D, 0, 1);
+
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+
+      for (const p of this.particles) {
+        const s = this.laneStrength(p.lane);
+        const baseA = (0.04 + 0.22*s) * p.a * (0.9 - 0.35*dmg) * (1.0 - 0.25*fat);
+        if (baseA < 0.01) continue;
+
+        const col = this.flowColor(p.lane);
+        const pt = this.pathPoint(p.lane, p.p);
+
+        // jitter increases with fatigue and damage
+        const jit = (0.5*fat + 0.9*dmg) * (0.6 + 0.6*p.wob);
+        const jx = Math.sin(p.phase) * 10*jit;
+        const jy = Math.cos(p.phase*1.3) * 10*jit;
+
+        // draw small streak (line segment)
+        const head = pt;
+        const tail = this.pathPoint(p.lane, clamp(p.p - 0.035 - 0.05*s, 0, 1));
+
+        ctx.lineWidth = 1.2 + 2.0*s;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${baseA})`;
+
+        ctx.beginPath();
+        ctx.moveTo(tail.x + jx*0.65, tail.y + jy*0.65);
+        ctx.lineTo(head.x + jx, head.y + jy);
+        ctx.stroke();
+
+        // sparkle node
+        if (Math.random() < 0.012 + 0.025*s) {
+          ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${baseA*1.2})`;
+          ctx.beginPath();
+          ctx.arc(head.x + jx, head.y + jy, 1.2 + 1.8*s, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    },
+
+    drawGhostOverlay(ctx, ts, ghost) {
+      // Dashed faint silhouette, distorted, representing overtrained counterfactual.
+      const gRead = clamp(ghost.readiness, 0, 1);
+      const gFat = clamp(ghost.fatigue, 0, 1);
+      const gD = clamp(ghost.D, 0, 1);
+
+      const alpha = 0.14 + 0.10*(1-gRead) + 0.12*gD;
+      const dx = 8 + 10*Math.sin(ts*0.0012) * (0.6 + 0.8*gFat);
+      const dy = 6*Math.cos(ts*0.0015) * (0.6 + 0.8*gFat);
+
+      ctx.save();
+      ctx.translate(dx, dy);
+      ctx.globalAlpha = alpha;
+      ctx.setLineDash([7, 6]);
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = `rgba(220,220,240,${alpha})`;
+      ctx.shadowColor = `rgba(160,85,220,${0.12 + 0.18*gD})`;
+      ctx.shadowBlur = 16;
+
+      this.pathBody(ctx, 0);
+      ctx.stroke();
+
+      // add distortion noise streaks
+      ctx.setLineDash([2, 10]);
+      ctx.lineWidth = 1.0;
+      ctx.globalAlpha = alpha*0.9;
+      for (let i=0;i<24;i++){
+        const y = lerp(-240, 260, Math.random());
+        const wob = (Math.sin((y*0.08)+ts*0.006) + Math.sin((y*0.02)+ts*0.003))* (1.0 + 2.0*gFat);
+        ctx.beginPath();
+        ctx.moveTo(-150 + wob, y);
+        ctx.lineTo(150 + wob, y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    },
+
+    drawEventPulse(ctx, ts) {
+      const age = (performance.now() - (this.lastEventAt || 0)) / 1000;
+      if (!this.lastEventAt || age > 0.9) return;
+
+      const t = clamp(1 - age/0.9, 0, 1);
+      const r = lerp(18, 110, 1-t);
+      const a = 0.22 * t;
+
+      let col = "rgba(90,140,255,";
+      if (this.lastEventType === "body" || this.lastEventType === "deep") col = "rgba(255,92,70,";
+      else if (this.lastEventType === "food") col = "rgba(190,255,220,";
+      else if (this.lastEventType === "rest" || this.lastEventType === "mind") col = "rgba(80,190,255,";
+      else if (this.lastEventType === "bad") col = "rgba(160,85,220,";
+      else if (this.lastEventType === "undo") col = "rgba(200,200,220,";
+
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `${col}${a})`;
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.arc(this.w*0.5, this.h*0.5, r, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+
+  // -----------------------------
+  // Trajectory chart (Canvas2D)
+  // -----------------------------
+  function drawTrajectory(forecast) {
+    const ctx = trajCanvas.getContext("2d");
+    const w = trajCanvas.width, h = trajCanvas.height;
+
+    ctx.clearRect(0,0,w,h);
+
+    // background grid
+    ctx.fillStyle = "rgba(0,0,0,0)";
+    ctx.fillRect(0,0,w,h);
+
+    const padL = 46, padR = 14, padT = 16, padB = 34;
+    const gw = w - padL - padR;
+    const gh = h - padT - padB;
+
+    ctx.save();
+    ctx.translate(padL, padT);
+
+    // axes/grid
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    for (let i=0;i<=5;i++){
+      const y = gh * (i/5);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(gw, y);
+      ctx.stroke();
+    }
+    for (let i=0;i<=10;i++){
+      const x = gw * (i/10);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, gh);
+      ctx.stroke();
+    }
+
+    // labels
+    ctx.fillStyle = "rgba(230,240,255,0.7)";
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+    ctx.fillText("1.0", -32, 6);
+    ctx.fillText("0.0", -32, gh);
+
+    if (!forecast) {
+      ctx.fillStyle = "rgba(160,170,200,0.7)";
+      ctx.fillText("Finalize 7 days to unlock Bayesian + Monte Carlo forecast.", 8, gh/2);
+      ctx.restore();
+      return;
+    }
+
+    const n = forecast.horizon;
+
+    const xAt = (i) => (i/(n-1)) * gw;
+    const yAt = (v) => gh * (1 - clamp(v,0,1));
+
+    function drawFog(qArr, rgb, alphaBase) {
+      // fill between q10 and q90 (fog cone)
+      ctx.beginPath();
+      for (let i=0;i<n;i++){
+        const x = xAt(i);
+        const y = yAt(qArr[i].q90);
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      for (let i=n-1;i>=0;i--){
+        const x = xAt(i);
+        const y = yAt(qArr[i].q10);
+        ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alphaBase})`;
+      ctx.fill();
+
+      // median line
+      ctx.beginPath();
+      for (let i=0;i<n;i++){
+        const x = xAt(i);
+        const y = yAt(qArr[i].q50);
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${0.55})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Readiness fog (blue/teal)
+    drawFog(forecast.readinessQ, [90, 160, 255], 0.14);
+    // Growth fog (greenish/white)
+    drawFog(forecast.growthQ, [140, 255, 210], 0.12);
+
+    // x axis labels
+    ctx.fillStyle = "rgba(160,170,200,0.8)";
+    ctx.fillText("Now", 0, gh + 22);
+    ctx.fillText("+30d", gw - 34, gh + 22);
+
+    ctx.restore();
   }
-  normalizeAll();
-  return { ok:true, msg:"READY" };
-}
 
-function init(){
-  load();
-  syncDayRollover();
+  // -----------------------------
+  // Events wiring
+  // -----------------------------
+  function wireUI() {
+    finalizeBtn.addEventListener("click", finalizeDay);
 
-  bindTabs();
-  bindCalendarNav();
-  bindRange();
-  bindCoach();
-  bindLLM();
-  bindCards();
-
-  setView("today");
-  renderAll();
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      syncDayRollover();
-      setView("today");
-      renderAll();
+    for (const btn of tapGrid.querySelectorAll(".tap")) {
+      const type = btn.getAttribute("data-type");
+      btn.addEventListener("click", () => logTap(type));
+      attachLongPressUndo(btn);
     }
-  });
 
-  const diag = finalDiagnostic();
-  toast(diag.msg);
-}
+    playbackToggle.addEventListener("click", () => {
+      holo.playbackOn = !holo.playbackOn;
+      playbackPanel.hidden = !holo.playbackOn;
 
-window.addEventListener("load", init);
+      // if turning on but not enough data, still show scrub UI (it just mirrors latest available)
+      holo.setTargetFromSelection();
+      renderPlaybackControls();
+    });
+
+    pbSlider.addEventListener("input", () => {
+      holo.playbackIndex = clamp(parseInt(pbSlider.value,10)-1, 0, EXPERIMENT_DAYS-1);
+      renderPlaybackControls();
+      holo.setTargetFromSelection();
+    });
+
+    toTodayBtn.addEventListener("click", () => {
+      setSelectedDay(todayKey());
+      todayPanel.scrollIntoView({behavior:"smooth", block:"start"});
+    });
+  }
+
+  // -----------------------------
+  // Boot
+  // -----------------------------
+  function boot() {
+    ensureTodaySelected();
+    recomputeAllDays();
+
+    // If selected day doesn't exist or is empty, select today.
+    const sel = selectedDay();
+    if (!sel) setSelectedDay(todayKey());
+
+    // Initialize canvases for crispness on high-DPI
+    setupHiDPICanvas(holoCanvas, 720, 720);
+    setupHiDPICanvas(trajCanvas, 960, 360);
+
+    holo.init();
+    wireUI();
+
+    renderAll();
+    scheduleMidnightRefresh();
+
+    // Start/stop animation based on visibility (no background loops)
+    function syncAnim() {
+      if (document.hidden) holo.stop();
+      else holo.start();
+    }
+    document.addEventListener("visibilitychange", syncAnim);
+    syncAnim();
+  }
+
+  function setupHiDPICanvas(canvas, cssW, cssH) {
+    const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.floor(cssW * dpr);
+    canvas.height = Math.floor(cssH * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // keep internal logical sizes for hologram engine
+    if (canvas === holoCanvas) {
+      holo.w = cssW;
+      holo.h = cssH;
+    }
+  }
+
+  boot();
+})();
