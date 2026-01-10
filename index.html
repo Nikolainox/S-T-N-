@@ -1,176 +1,171 @@
 <!doctype html>
-<html lang="fi">
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>Panic OS</title>
-  <link rel="stylesheet" href="style.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#06070b" />
+  <title>Hologram Avatar Growth Engine</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-<header class="topbar">
-  <div class="brand">
-    <div class="logo"></div>
-    <div class="brandText">
-      <div class="brandTitle">Panic OS</div>
-      <div class="brandSub" id="subLine">TODAY — Tap what you actually did. Close app.</div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div class="title">
+        <div class="name">Hologram Growth Engine</div>
+        <div class="sub" id="subline">Open → tap → close</div>
+      </div>
     </div>
-  </div>
 
-  <div class="topActions">
-    <button class="chip" id="tabToday" aria-pressed="true">Today</button>
-    <button class="chip" id="tabCoach" aria-pressed="false">Coach</button>
-    <button class="chip" id="tabTrajectory" aria-pressed="false">Trajectory</button>
-    <button class="chip" id="tabCalendar" aria-pressed="false">Calendar</button>
-    <button class="btn" id="finalizeBtn">Finalize</button>
-  </div>
-</header>
-
-<main class="main">
-
-  <section class="panel hero">
-    <div class="hud">
-      <div class="pill" id="hudDate">—</div>
-      <div class="pill" id="hudWake">Wake —</div>
-      <div class="pill" id="hudTaps">Taps —</div>
-      <div class="pill" id="hudState">LIVE</div>
-      <div class="pill" id="hudOdds">Odds —</div>
-      <div class="pill glow" id="hudGhost">Ghost —</div>
+    <div class="status">
+      <div class="pill" id="dayPill">TODAY • LIVE</div>
+      <button class="btn ghost" id="toTodayBtn" title="Scroll to Today">Today</button>
     </div>
-    <div class="nowLine" id="nowLine">Tap. Done. No menus. No names. Just truth.</div>
-  </section>
+  </header>
 
-  <section id="viewToday">
-    <section class="panel netflix">
-      <div class="rowHead">
-        <div class="rowTitle">Mind</div>
-        <div class="rowHint">Tap · long-press = undo last</div>
-      </div>
-      <div class="row">
-        <button class="card c-mind" data-c="mind"><div class="cardGlow"></div><div class="cardLabel">Mind · Reset</div></button>
-        <button class="card c-deep" data-c="deep"><div class="cardGlow"></div><div class="cardLabel">Deep · Focus</div></button>
-        <button class="card c-cult" data-c="cult"><div class="cardGlow"></div><div class="cardLabel">Culture · Connect</div></button>
-      </div>
+  <main class="wrap">
+    <!-- TODAY / 2-second interface -->
+    <section class="panel today" id="todayPanel" aria-label="Today">
+      <div class="row between">
+        <div class="hgroup">
+          <div class="h1" id="todayDate">—</div>
+          <div class="meta">
+            <span id="wakeLabel">Wake: —</span>
+            <span class="sep">•</span>
+            <span id="lockLabel">Unlocked</span>
+          </div>
+        </div>
 
-      <div class="rowHead">
-        <div class="rowTitle">Body</div>
-        <div class="rowHint">Fast log</div>
-      </div>
-      <div class="row">
-        <button class="card c-body" data-c="body"><div class="cardGlow"></div><div class="cardLabel">Body · Train</div></button>
-        <button class="card c-food" data-c="food"><div class="cardGlow"></div><div class="cardLabel">Food · Fuel</div></button>
-        <button class="card c-rest" data-c="rest"><div class="cardGlow"></div><div class="cardLabel">Rest · Recover</div></button>
+        <div class="actions">
+          <button class="btn" id="finalizeBtn">Finalize</button>
+        </div>
       </div>
 
-      <div class="rowHead">
-        <div class="rowTitle">Shadow</div>
-        <div class="rowHint">Only when real</div>
+      <div class="tapgrid" id="tapGrid">
+        <button class="tap b-mind" data-type="mind" aria-label="Mind (nervous system stability)">🔵 Mind</button>
+        <button class="tap b-deep" data-type="deep" aria-label="Deep (training intent)">🟡 Deep</button>
+        <button class="tap b-body" data-type="body" aria-label="Body (mechanical load)">🔴 Body</button>
+        <button class="tap b-food" data-type="food" aria-label="Food (fueling)">⚪ Food</button>
+        <button class="tap b-rest" data-type="rest" aria-label="Rest (sleep/recovery)">🟢 Rest</button>
+        <button class="tap b-bad"  data-type="bad"  aria-label="Bad (damage)">⚫ Bad</button>
       </div>
-      <div class="row">
-        <button class="card c-bad" data-c="bad"><div class="cardGlow"></div><div class="cardLabel">Bad · Drift</div></button>
+
+      <div class="row metrics">
+        <div class="meter">
+          <div class="k">Readiness</div>
+          <div class="v" id="readinessText">—</div>
+          <div class="bar"><div class="fill" id="readinessFill"></div></div>
+        </div>
+        <div class="meter">
+          <div class="k">Fatigue</div>
+          <div class="v" id="fatigueText">—</div>
+          <div class="bar"><div class="fill" id="fatigueFill"></div></div>
+        </div>
+        <div class="meter">
+          <div class="k">GrowthImpulse</div>
+          <div class="v" id="growthText">—</div>
+          <div class="bar"><div class="fill" id="growthFill"></div></div>
+        </div>
+      </div>
+
+      <div class="coach" aria-label="Coach">
+        <div class="coachline"><span class="tag">TRUTH</span> <span id="coachTruth">—</span></div>
+        <div class="coachline"><span class="tag">NEXT</span> <span id="coachNext">—</span></div>
+        <div class="coachline" id="coachRiskRow"><span class="tag">RISK</span> <span id="coachRisk">—</span></div>
       </div>
 
       <div class="micro">
-        <div>Finalize locks the day. History is read-only.</div>
-        <div>Offline · LocalStorage</div>
+        <div class="hint">Tap to log. Long-press any tap button to undo last event.</div>
       </div>
     </section>
 
-    <section class="panel holoPanel">
-      <div class="holoHead">
-        <div>
-          <div class="holoTitle" id="holoTitle">Today Flow</div>
-          <div class="holoMeta" id="holoMeta">—</div>
+    <!-- HOLOGRAM -->
+    <section class="panel holo" aria-label="Hologram Avatar">
+      <div class="row between">
+        <div class="hgroup">
+          <div class="h2">Hologram</div>
+          <div class="meta" id="holoMeta">Signals, not promises.</div>
         </div>
-        <button class="chip" id="backToTodayBtn" style="display:none;">Back</button>
-      </div>
-      <div class="canvasWrap">
-        <canvas id="holoCanvas"></canvas>
-      </div>
-      <div class="jarvis" id="jarvisLine">—</div>
-    </section>
-  </section>
 
-  <section id="viewCoach" style="display:none;">
-    <section class="panel coachPanel">
-      <div class="coachHead">
-        <div>
-          <div class="coachTitle">AI Coach</div>
-          <div class="coachMeta" id="coachMeta">—</div>
-        </div>
-        <div class="coachActions">
-          <button class="chip" id="coachPin">Pin</button>
-          <button class="chip" id="coachRefresh">Refresh</button>
+        <div class="actions">
+          <button class="btn ghost" id="playbackToggle">Playback</button>
         </div>
       </div>
 
-      <div class="coachPlan">
-        <div class="planTitle">Simple Coach</div>
-        <div class="planLine" id="plan1">—</div>
-        <div class="planLine" id="plan2">—</div>
-        <div class="planLine" id="plan3">—</div>
-      </div>
+      <div class="holoStage">
+        <canvas id="holoCanvas" width="720" height="720" aria-label="Hologram canvas"></canvas>
 
-      <div class="panel llmPanel">
-        <div class="llmHead">
-          <div>
-            <div class="llmTitle">LLM Coach</div>
-            <div class="llmMeta">Optional. Works only if you set endpoint+model+key.</div>
+        <div class="playback" id="playbackPanel" hidden>
+          <div class="row between">
+            <div class="meta"><span id="pbLabel">Day 1</span> <span class="sep">•</span> scrub 1→7</div>
+            <div class="pill small" id="pbModePill">PLAYBACK</div>
           </div>
-          <button class="chip" id="llmRun">Run once</button>
+          <input id="pbSlider" type="range" min="1" max="7" step="1" value="7" />
+          <div class="row between mini">
+            <div class="meta">You vs Ghost</div>
+            <div class="meta" id="youGhostPct">—</div>
+          </div>
         </div>
-        <div class="llmForm">
-          <input id="llmEndpoint" placeholder="Endpoint (OpenAI-compatible), e.g. https://api.openai.com/v1/chat/completions" />
-          <input id="llmModel" placeholder="Model, e.g. gpt-4o-mini" />
-          <input id="llmKey" placeholder="API key" />
-          <label class="llmRow">
-            <input type="checkbox" id="llmRemember"/> remember locally
-          </label>
-        </div>
-        <div class="jarvis" id="llmOut">—</div>
       </div>
-
-      <div class="jarvis" id="coachJarvis">—</div>
     </section>
-  </section>
 
-  <section id="viewTrajectory" style="display:none;">
-    <section class="panel insightPanel">
-      <div class="insHead">
-        <div>
-          <div class="insTitle">Vertical Life Trajectory</div>
-          <div class="insMeta" id="insMeta">—</div>
+    <!-- PROBABILITIES + TRAJECTORY -->
+    <section class="panel traj" aria-label="Trajectory">
+      <div class="row between">
+        <div class="hgroup">
+          <div class="h2">Trajectory</div>
+          <div class="meta">Forecast is fog, not fate.</div>
         </div>
-        <div class="insChips">
-          <button class="chip" id="range30" aria-pressed="true">30d</button>
-          <button class="chip" id="range90" aria-pressed="false">90d</button>
+        <div class="pill small" id="probPill">Need 7 finalized days</div>
+      </div>
+
+      <div class="probgrid">
+        <div class="probcard">
+          <div class="k">P(Growth Day)</div>
+          <div class="v" id="pGrowth">—</div>
+        </div>
+        <div class="probcard">
+          <div class="k">P(Overtraining Drift 7d)</div>
+          <div class="v" id="pDrift">—</div>
+        </div>
+        <div class="probcard">
+          <div class="k">P(You &gt; Ghost)</div>
+          <div class="v" id="pBeatGhost">—</div>
         </div>
       </div>
-      <div class="canvasWrap">
-        <canvas id="trajCanvas"></canvas>
+
+      <div class="chartWrap">
+        <canvas id="trajCanvas" width="960" height="360" aria-label="Trajectory chart"></canvas>
+        <div class="legend">
+          <span class="chip">Readiness (fog cone 10–90%)</span>
+          <span class="chip">GrowthImpulse (fog cone 10–90%)</span>
+        </div>
       </div>
-      <div class="jarvis" id="insJarvis">—</div>
     </section>
-  </section>
 
-  <section id="viewCalendar" style="display:none;">
-    <section class="panel calendarPanel">
-      <div class="calTop">
-        <button class="chip" id="calPrev">‹</button>
-        <div class="calTitle" id="calTitle">—</div>
-        <button class="chip" id="calNext">›</button>
+    <!-- CALENDAR FOOTPRINTS -->
+    <section class="panel cal" aria-label="Calendar Footprints">
+      <div class="row between">
+        <div class="hgroup">
+          <div class="h2">Footprints</div>
+          <div class="meta">What you did, not what you intended.</div>
+        </div>
+        <div class="meta" id="calMeta">Last 30 days</div>
       </div>
-      <div class="calDow">
-        <div>Ma</div><div>Ti</div><div>Ke</div><div>To</div><div>Pe</div><div>La</div><div>Su</div>
+
+      <div class="calendar" id="calendar"></div>
+      <div class="micro">
+        <div class="hint">Tap any day to view (doesn’t unlock). Finalize locks.</div>
       </div>
-      <div class="calendarGrid" id="calendarGrid"></div>
-      <div class="calHint" id="calHint">Tap päivä → näet sen päivän flow.</div>
     </section>
-  </section>
 
-</main>
+    <footer class="foot">
+      <div class="meta">
+        Offline-first. No background loops. No external libraries.
+      </div>
+    </footer>
+  </main>
 
-<div class="toast" id="toast"></div>
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
