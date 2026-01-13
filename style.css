@@ -1,21 +1,9 @@
 :root{
   --bg:#05060a;
-  --panel:#0b0d14;
-  --panel2:#070913;
   --txt:#e8eefb;
   --muted:#9aa6c3;
   --line:rgba(255,255,255,0.08);
   --line2:rgba(255,255,255,0.12);
-
-  --mind:#3aa0ff;
-  --deep:#ffd24a;
-  --body:#ff4a4a;
-  --food:#e9f4ff;
-  --rest:#56f1a1;
-  --bad:#b7b7b7;
-
-  --goodGlow: rgba(80,255,190,0.22);
-  --badGlow: rgba(255,85,85,0.18);
 }
 
 *{box-sizing:border-box}
@@ -43,9 +31,7 @@ body{
   border-bottom:1px solid var(--line);
 }
 
-.brand{
-  display:flex; gap:10px; align-items:center;
-}
+.brand{display:flex; gap:10px; align-items:center;}
 .dot{
   width:10px; height:10px; border-radius:50%;
   background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), rgba(120,200,255,0.45) 35%, rgba(0,0,0,0) 70%);
@@ -97,6 +83,7 @@ body{
   background: rgba(255,255,255,0.02);
   color: var(--muted);
 }
+
 .pill{
   border:1px solid var(--line2);
   background: rgba(0,0,0,0.25);
@@ -147,6 +134,7 @@ body{
   cursor:not-allowed;
   filter:saturate(0.6);
 }
+
 .b-mind{box-shadow: 0 0 0 1px rgba(58,160,255,0.18) inset}
 .b-deep{box-shadow: 0 0 0 1px rgba(255,210,74,0.18) inset}
 .b-body{box-shadow: 0 0 0 1px rgba(255,74,74,0.18) inset}
@@ -221,7 +209,9 @@ body{
   width:100%;
   height:auto;
   aspect-ratio: 1/1;
+  touch-action: none;
 }
+
 .playback{
   position:absolute;
   left:10px; right:10px; bottom:10px;
@@ -263,7 +253,9 @@ body{
   display:block;
   width:100%;
   height:auto;
+  aspect-ratio: 8/3;
 }
+
 .legend{
   display:flex;
   gap:8px;
