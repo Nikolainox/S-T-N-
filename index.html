@@ -24,7 +24,6 @@
   </header>
 
   <main class="wrap">
-    <!-- TODAY / 2-second interface -->
     <section class="panel today" id="todayPanel" aria-label="Today">
       <div class="row between">
         <div class="hgroup">
@@ -79,7 +78,6 @@
       </div>
     </section>
 
-    <!-- HOLOGRAM -->
     <section class="panel holo" aria-label="Hologram Avatar">
       <div class="row between">
         <div class="hgroup">
@@ -92,8 +90,8 @@
         </div>
       </div>
 
-      <div class="holoStage">
-        <canvas id="holoCanvas" width="720" height="720" aria-label="Hologram canvas"></canvas>
+      <div class="holoStage" id="holoStage">
+        <canvas id="holoCanvas" aria-label="Hologram canvas"></canvas>
 
         <div class="playback" id="playbackPanel" hidden>
           <div class="row between">
@@ -109,7 +107,6 @@
       </div>
     </section>
 
-    <!-- PROBABILITIES + TRAJECTORY -->
     <section class="panel traj" aria-label="Trajectory">
       <div class="row between">
         <div class="hgroup">
@@ -134,8 +131,8 @@
         </div>
       </div>
 
-      <div class="chartWrap">
-        <canvas id="trajCanvas" width="960" height="360" aria-label="Trajectory chart"></canvas>
+      <div class="chartWrap" id="trajWrap">
+        <canvas id="trajCanvas" aria-label="Trajectory chart"></canvas>
         <div class="legend">
           <span class="chip">Readiness (fog cone 10–90%)</span>
           <span class="chip">GrowthImpulse (fog cone 10–90%)</span>
@@ -143,7 +140,6 @@
       </div>
     </section>
 
-    <!-- CALENDAR FOOTPRINTS -->
     <section class="panel cal" aria-label="Calendar Footprints">
       <div class="row between">
         <div class="hgroup">
