@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Biologinen Close</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app" id="app">
+    <header class="top">
+      <div class="dateRow">
+        <button class="navBtn" id="btnYesterday" aria-label="Yesterday">Yesterday</button>
+        <div class="dateBlock">
+          <div class="dateTitle" id="dateTitle">Today</div>
+          <div class="dateSub" id="dateSub"></div>
+        </div>
+        <button class="navBtn" id="btnToday" aria-label="Today">Today</button>
+      </div>
+
+      <div class="metaRow">
+        <button class="metaPillBtn" id="btnExp" aria-label="Set experiment">
+          <span class="metaPillLabel">EXP</span>
+          <span class="metaPillValue" id="expText">—</span>
+        </button>
+        <button class="ghostBtn" id="btnReview" aria-label="Review last 7 finalized days">Review</button>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="sectionTitle">Quarter</div>
+      <div class="grid4" id="quarterGrid">
+        <button class="bigBtn" data-quarter="Q1">Q1</button>
+        <button class="bigBtn" data-quarter="Q2">Q2</button>
+        <button class="bigBtn" data-quarter="Q3">Q3</button>
+        <button class="bigBtn" data-quarter="Q4">Q4</button>
+      </div>
+      <div class="hint" id="quarterHint">Valitse quarter yhdellä napautuksella.</div>
+    </section>
+
+    <section class="section">
+      <div class="sectionTitle">Events</div>
+      <div class="grid3" id="eventGrid">
+        <button class="eventBtn" data-evt="MIND">MIND</button>
+        <button class="eventBtn" data-evt="DEEP">DEEP</button>
+        <button class="eventBtn" data-evt="BODY">BODY</button>
+        <button class="eventBtn" data-evt="FOOD">FOOD</button>
+        <button class="eventBtn" data-evt="REST">REST</button>
+        <button class="eventBtn bad" data-evt="BAD">BAD</button>
+      </div>
+
+      <div class="controls">
+        <button class="ctrlBtn" id="btnUndo">Undo</button>
+        <button class="ctrlBtn primary" id="btnFinalize">Finalize</button>
+      </div>
+
+      <div class="statusRow">
+        <div class="status" id="statusText" aria-live="polite"></div>
+        <div class="caps" id="capsText"></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="sectionTitle">Close</div>
+      <div class="closeBox" id="closeBox">
+        <div class="line"><span class="label">WHAT WORKED</span><span class="value" id="lineWorked">—</span></div>
+        <div class="line"><span class="label">WHAT HURT</span><span class="value" id="lineHurt">—</span></div>
+        <div class="line"><span class="label">TOMORROW</span><span class="value" id="lineTomorrow">—</span></div>
+      </div>
+      <div class="hint" id="lockHint"></div>
+    </section>
+  </main>
+
+  <!-- Review overlay -->
+  <div class="overlay hidden" id="overlayReview">
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Review last 7 days">
+      <div class="sheetTop">
+        <div class="sheetTitle">Review · last 7 finalized</div>
+        <button class="ghostBtn" id="btnCloseReview" aria-label="Close review">Close</button>
+      </div>
+      <div class="closeBox">
+        <div class="line"><span class="label">WHAT WORKED</span><span class="value" id="rWorked">—</span></div>
+        <div class="line"><span class="label">WHAT HURT</span><span class="value" id="rHurt">—</span></div>
+        <div class="line"><span class="label">TOMORROW</span><span class="value" id="rTomorrow">—</span></div>
+      </div>
+      <div class="hint">Ei kaavioita. Ei fiilistelyä. Pelkkä tiiviste.</div>
+    </div>
+  </div>
+
+  <!-- Experiment overlay (tap-only presets) -->
+  <div class="overlay hidden" id="overlayExp">
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Set experiment">
+      <div class="sheetTop">
+        <div class="sheetTitle">Experiment</div>
+        <button class="ghostBtn" id="btnCloseExp" aria-label="Close experiment">Close</button>
+      </div>
+
+      <div class="hint tight">Valitse nimi (1 tap). Start = tänään. Ei kirjoittamista.</div>
+
+      <div class="grid2" id="expGrid">
+        <button class="bigBtn" data-exp="Strength Block">Strength Block</button>
+        <button class="bigBtn" data-exp="Hypertrophy Block">Hypertrophy Block</button>
+        <button class="bigBtn" data-exp="Cut / Recomp">Cut / Recomp</button>
+        <button class="bigBtn" data-exp="Peaking">Peaking</button>
+        <button class="bigBtn" data-exp="Skill / Technique">Skill / Technique</button>
+        <button class="bigBtn" data-exp="Recovery Block">Recovery Block</button>
+      </div>
+
+      <div class="controls">
+        <button class="ctrlBtn danger" id="btnClearExp">Clear EXP</button>
+      </div>
+
+      <div class="hint">Clear poistaa experiment-framingin (ei vaikuta päivädataan).</div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
