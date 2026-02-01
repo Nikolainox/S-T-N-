@@ -161,7 +161,7 @@ body[data-q="Q4"]::before{ opacity:0.60; }
 .line:last-child{ border-bottom:none; }
 
 .lab{
-  min-width:140px;
+  min-width:160px;
   color:var(--muted);
   font-weight:900;
   font-size:12px;
@@ -201,6 +201,7 @@ body[data-q="Q4"]::before{ opacity:0.60; }
   font-size:12px;
   overflow:auto;
   max-height: 220px;
+  white-space: pre;
 }
 
 button:disabled{ opacity:0.45; }
