@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Biologinen Close</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div class="row">
+        <button class="nav" id="btnYesterday">Yesterday</button>
+        <div class="center">
+          <div class="title" id="dateTitle">Today</div>
+          <div class="sub" id="dateSub"></div>
+        </div>
+        <button class="nav" id="btnToday">Today</button>
+      </div>
+
+      <div class="row">
+        <button class="pill" id="btnExp" aria-label="Experiment">
+          <span class="pillK">EXP</span>
+          <span class="pillV" id="expText">—</span>
+        </button>
+        <button class="ghost" id="btnReview">Review</button>
+        <button class="ghost" id="btnDiag">Diag</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="k">Quarter</div>
+      <div class="grid4" id="quarterGrid">
+        <button class="btn" data-quarter="Q1">Q1</button>
+        <button class="btn" data-quarter="Q2">Q2</button>
+        <button class="btn" data-quarter="Q3">Q3</button>
+        <button class="btn" data-quarter="Q4">Q4</button>
+      </div>
+      <div class="hint" id="quarterHint">Valitse quarter yhdellä napautuksella.</div>
+    </section>
+
+    <section class="card">
+      <div class="k">Events</div>
+      <div class="grid3" id="eventGrid">
+        <button class="btn" data-evt="MIND">MIND</button>
+        <button class="btn" data-evt="DEEP">DEEP</button>
+        <button class="btn" data-evt="BODY">BODY</button>
+        <button class="btn" data-evt="FOOD">FOOD</button>
+        <button class="btn" data-evt="REST">REST</button>
+        <button class="btn bad" data-evt="BAD">BAD</button>
+      </div>
+
+      <div class="row">
+        <button class="ctrl" id="btnUndo">Undo</button>
+        <button class="ctrl primary" id="btnFinalize">Finalize</button>
+      </div>
+
+      <div class="row slim">
+        <div class="status" id="statusText" aria-live="polite"></div>
+        <div class="caps" id="capsText"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="k">Close</div>
+      <div class="box">
+        <div class="line"><span class="lab">WHAT WORKED</span><span class="val" id="lineWorked">—</span></div>
+        <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="lineHurt">—</span></div>
+        <div class="line"><span class="lab">TOMORROW</span><span class="val" id="lineTomorrow">—</span></div>
+      </div>
+      <div class="hint" id="lockHint"></div>
+    </section>
+  </main>
+
+  <!-- REVIEW -->
+  <div class="overlay hidden" id="ovReview">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="row">
+        <div class="sheetTitle">Review · last 7 finalized</div>
+        <button class="ghost" id="btnCloseReview">Close</button>
+      </div>
+      <div class="box">
+        <div class="line"><span class="lab">WHAT WORKED</span><span class="val" id="rWorked">—</span></div>
+        <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="rHurt">—</span></div>
+        <div class="line"><span class="lab">TOMORROW</span><span class="val" id="rTomorrow">—</span></div>
+      </div>
+      <div class="hint">Ei kaavioita. Ei guilt-mekaniikkaa. Pelkkä tiiviste.</div>
+    </div>
+  </div>
+
+  <!-- EXP -->
+  <div class="overlay hidden" id="ovExp">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="row">
+        <div class="sheetTitle">Experiment (tap-only)</div>
+        <button class="ghost" id="btnCloseExp">Close</button>
+      </div>
+      <div class="hint tight">Valitse nimi (1 tap). Start = tänään. Ei kirjoittamista.</div>
+      <div class="grid2" id="expGrid">
+        <button class="btn" data-exp="Strength Block">Strength Block</button>
+        <button class="btn" data-exp="Hypertrophy Block">Hypertrophy Block</button>
+        <button class="btn" data-exp="Cut / Recomp">Cut / Recomp</button>
+        <button class="btn" data-exp="Peaking">Peaking</button>
+        <button class="btn" data-exp="Skill / Technique">Skill / Technique</button>
+        <button class="btn" data-exp="Recovery Block">Recovery Block</button>
+      </div>
+      <div class="row">
+        <button class="ctrl danger" id="btnClearExp">Clear EXP</button>
+      </div>
+      <div class="hint">Clear poistaa experiment-framingin (ei vaikuta päivädataan).</div>
+    </div>
+  </div>
+
+  <!-- DIAGNOSTICS -->
+  <div class="overlay hidden" id="ovDiag">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="row">
+        <div class="sheetTitle">Diagnostics</div>
+        <button class="ghost" id="btnCloseDiag">Close</button>
+      </div>
+
+      <div class="box">
+        <div class="line"><span class="lab">STATE</span><span class="val" id="dState">—</span></div>
+        <div class="line"><span class="lab">DISABLED REASON</span><span class="val" id="dWhy">—</span></div>
+        <div class="line"><span class="lab">STORAGE</span><span class="val" id="dStorage">—</span></div>
+      </div>
+
+      <div class="row">
+        <button class="ctrl" id="btnRunMC">Run Monte Carlo (90d)</button>
+        <button class="ctrl" id="btnClearAll">Nuke Data</button>
+      </div>
+
+      <pre class="pre" id="dJson"></pre>
+      <pre class="pre" id="dMC"></pre>
+
+      <div class="hint">Monte Carlo on diagnostiikkaa: se arvioi “cap-hit” riskiä ja finalize-käyttäytymistä 90 päivän kokeessa.</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
