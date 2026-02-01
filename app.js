@@ -12,11 +12,12 @@
   });
 
   const EVT_TYPES = Object.freeze(["MIND", "DEEP", "BODY", "FOOD", "REST", "BAD"]);
-  const QUARTERS = Object.freeze(["Q1", "Q2", "Q3", "Q4"]);
+  const QUARTERS  = Object.freeze(["Q1", "Q2", "Q3", "Q4"]);
 
-  const LS_ROOT = "bioClose.v4";
-  const LS_DAY_PREFIX = `${LS_ROOT}.day.`; // + YYYY-MM-DD
-  const LS_EXP = `${LS_ROOT}.exp`;         // {name, startIso}
+  const LS_ROOT      = "bioClose.v5";
+  const LS_DAY_PREFIX= `${LS_ROOT}.day.`;   // + YYYY-MM-DD
+  const LS_EXP       = `${LS_ROOT}.exp`;    // {name, startIso}
+  const LS_START     = `${LS_ROOT}.start`;  // {startIso} optional
 
   /* =========================
      DOM
@@ -24,85 +25,76 @@
   const $ = (id) => document.getElementById(id);
 
   const dateTitle = $("dateTitle");
-  const dateSub = $("dateSub");
+  const dateSub   = $("dateSub");
 
   const btnYesterday = $("btnYesterday");
-  const btnToday = $("btnToday");
+  const btnToday     = $("btnToday");
 
-  const quarterGrid = $("quarterGrid");
-  const quarterHint = $("quarterHint");
+  const quarterGrid  = $("quarterGrid");
+  const quarterHint  = $("quarterHint");
 
-  const eventGrid = $("eventGrid");
-  const btnUndo = $("btnUndo");
-  const btnFinalize = $("btnFinalize");
+  const eventGrid    = $("eventGrid");
+  const btnUndo      = $("btnUndo");
+  const btnFinalize  = $("btnFinalize");
 
-  const statusText = $("statusText");
-  const capsText = $("capsText");
+  const statusText   = $("statusText");
+  const capsText     = $("capsText");
 
-  const lineWorked = $("lineWorked");
-  const lineHurt = $("lineHurt");
+  const lineWorked   = $("lineWorked");
+  const lineHurt     = $("lineHurt");
   const lineTomorrow = $("lineTomorrow");
-  const lockHint = $("lockHint");
+  const lockHint     = $("lockHint");
 
   // Review
-  const btnReview = $("btnReview");
-  const ovReview = $("ovReview");
+  const btnReview      = $("btnReview");
+  const ovReview       = $("ovReview");
   const btnCloseReview = $("btnCloseReview");
-  const rWorked = $("rWorked");
-  const rHurt = $("rHurt");
-  const rTomorrow = $("rTomorrow");
+  const rWorked        = $("rWorked");
+  const rHurt          = $("rHurt");
+  const rTomorrow      = $("rTomorrow");
 
-  // EXP
-  const btnExp = $("btnExp");
-  const expText = $("expText");
-  const ovExp = $("ovExp");
-  const btnCloseExp = $("btnCloseExp");
-  const expGrid = $("expGrid");
-  const btnClearExp = $("btnClearExp");
+  // Exp
+  const btnExp       = $("btnExp");
+  const expText      = $("expText");
+  const ovExp        = $("ovExp");
+  const btnCloseExp  = $("btnCloseExp");
+  const expGrid      = $("expGrid");
+  const btnClearExp  = $("btnClearExp");
 
-  // Diagnostics
-  const btnDiag = $("btnDiag");
-  const ovDiag = $("ovDiag");
-  const btnCloseDiag = $("btnCloseDiag");
-  const dState = $("dState");
-  const dWhy = $("dWhy");
-  const dStorage = $("dStorage");
-  const dJson = $("dJson");
-  const dMC = $("dMC");
-  const btnRunMC = $("btnRunMC");
-  const btnClearAll = $("btnClearAll");
+  // Diag
+  const btnDiag         = $("btnDiag");
+  const ovDiag          = $("ovDiag");
+  const btnCloseDiag    = $("btnCloseDiag");
+  const dLabel          = $("dLabel");
+  const dBar            = $("dBar");
+  const btnRunMC        = $("btnRunMC");
+  const btnResetTomorrow= $("btnResetTomorrow");
 
   /* =========================
      TIME (Europe/Helsinki)
      ========================= */
-  function todayISO() {
+  function fmtISO(date) {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Helsinki",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).format(new Date());
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).format(date);
   }
 
-  function isoToHuman(iso) {
-    const d = new Date(iso + "T12:00:00");
-    return new Intl.DateTimeFormat("fi-FI", {
-      timeZone: "Europe/Helsinki",
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    }).format(d);
+  function todayISO() {
+    return fmtISO(new Date());
   }
 
   function addDaysISO(iso, deltaDays) {
     const d = new Date(iso + "T12:00:00");
     d.setDate(d.getDate() + deltaDays);
-    return new Intl.DateTimeFormat("en-CA", {
+    return fmtISO(d);
+  }
+
+  function isoToHuman(iso) {
+    const d = new Date(iso + "T12:00:00");
+    return new Intl.DateTimeFormat("en-GB", {
       timeZone: "Europe/Helsinki",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
+      weekday: "short", year: "numeric", month: "short", day: "numeric"
     }).format(d);
   }
 
@@ -131,6 +123,7 @@
   function loadDay(iso) {
     const raw = localStorage.getItem(LS_DAY_PREFIX + iso);
     if (!raw) return emptyDay(iso);
+
     const obj = safeParse(raw);
     if (!obj || obj.iso !== iso) return emptyDay(iso);
 
@@ -144,8 +137,8 @@
     obj.finalized = !!obj.finalized;
 
     if (!obj.close || typeof obj.close !== "object") obj.close = emptyDay(iso).close;
-    obj.close.worked = clampLine(obj.close.worked ?? "—");
-    obj.close.hurt = clampLine(obj.close.hurt ?? "—");
+    obj.close.worked   = clampLine(obj.close.worked ?? "—");
+    obj.close.hurt     = clampLine(obj.close.hurt ?? "—");
     obj.close.tomorrow = clampLine(obj.close.tomorrow ?? "—");
 
     return obj;
@@ -182,6 +175,30 @@
     return Number.isFinite(days) && days >= 1 ? days : null;
   }
 
+  function loadStartIso() {
+    const raw = localStorage.getItem(LS_START);
+    if (!raw) return null;
+    const obj = safeParse(raw);
+    if (!obj || typeof obj.startIso !== "string") return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(obj.startIso)) return null;
+    return obj.startIso;
+  }
+
+  function saveStartIso(startIso) {
+    localStorage.setItem(LS_START, JSON.stringify({ startIso }));
+  }
+
+  function nukeNamespace() {
+    const toDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith(LS_DAY_PREFIX) || k === LS_EXP || k === LS_START) toDelete.push(k);
+    }
+    toDelete.forEach(k => localStorage.removeItem(k));
+    return toDelete.length;
+  }
+
   /* =========================
      TAP HARDENING
      ========================= */
@@ -199,7 +216,7 @@
   }
 
   /* =========================
-     LOGIC (DETERMINISTIC CLOSE)
+     LOGIC
      ========================= */
   function countsByType(events) {
     const c = Object.fromEntries(EVT_TYPES.map(t => [t, 0]));
@@ -265,10 +282,10 @@
         .map(([k]) => k);
 
     const workedTop = topN(tally(last7.map(d => d.close?.worked || "—")), 4);
-    const hurtTop = topN(tally(last7.map(d => d.close?.hurt || "—")), 4);
+    const hurtTop   = topN(tally(last7.map(d => d.close?.hurt || "—")), 4);
 
     const worked = workedTop.length ? workedTop.join(" · ") : "—";
-    const hurt = hurtTop.length ? hurtTop.join(" · ") : "—";
+    const hurt   = hurtTop.length ? hurtTop.join(" · ") : "—";
 
     let tomorrow = "Repeat top worked domains.";
     if (hurtTop.includes("NO REST")) tomorrow = "Fix REST first.";
@@ -280,13 +297,141 @@
   }
 
   /* =========================
+     GHOST ↔ PRESENCE DIAGNOSTIC
+     ========================= */
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+  function observedPresenceScore01() {
+    // "Opened" = any day with quarter chosen OR any events OR finalized.
+    // Presence = finalized/opened. Conservative; ignores "good" content.
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LS_DAY_PREFIX)) keys.push(k);
+    }
+    if (!keys.length) return null;
+
+    let opened = 0;
+    let finalized = 0;
+
+    for (const k of keys) {
+      const d = safeParse(localStorage.getItem(k));
+      if (!d || typeof d !== "object") continue;
+      const hasOpenSignal =
+        !!d.finalized ||
+        (typeof d.quarter === "string" && d.quarter) ||
+        (Array.isArray(d.events) && d.events.length > 0);
+      if (hasOpenSignal) opened++;
+      if (d.finalized) finalized++;
+    }
+    if (opened === 0) return null;
+    return clamp01(finalized / opened);
+  }
+
+  function barWithMarkers(obs01, mc01) {
+    // 20-slot bar: left=Ghost, right=Presence
+    const slots = 20;
+    const obsPos = obs01 == null ? null : Math.round(obs01 * slots);
+    const mcPos  = mc01  == null ? null : Math.round(mc01  * slots);
+
+    let line = "Ghost You ";
+    for (let i = 0; i <= slots; i++) {
+      let ch = "—";
+      if (obsPos !== null && i === obsPos) ch = "▲";   // observed marker
+      if (mcPos !== null && i === mcPos)  ch = (ch === "▲" ? "◆" : "◇"); // MC marker
+      line += ch;
+    }
+    line += " Presence You";
+
+    const legend = [
+      obs01 == null ? "▲ you: no data yet" : `▲ you: ${(obs01*100).toFixed(0)}% presence`,
+      mc01  == null ? "◇ mc: not run"      : `◇ mc(90d): ${(mc01*100).toFixed(0)}% expected`
+    ].join(" | ");
+
+    return `${line}\n${legend}`;
+  }
+
+  /* =========================
+     MONTE CARLO (90d) -> expected presence score
+     ========================= */
+  function rand() { return Math.random(); }
+  function approxPoisson(lambda) {
+    // Good enough for diagnostic simulation.
+    const L = Math.exp(-lambda);
+    let k = 0, p = 1;
+    do { k++; p *= rand(); } while (p > L);
+    return k - 1;
+  }
+  function sampleCat(items) {
+    const total = items.reduce((s, it) => s + it.w, 0);
+    let r = rand() * total;
+    for (const it of items) {
+      r -= it.w;
+      if (r <= 0) return it.k;
+    }
+    return items[items.length - 1].k;
+  }
+
+  function runMonteCarlo90dPresence01(sims = 10000) {
+    const SIMS = Math.max(1000, Math.min(50000, Math.floor(sims)));
+    const DAYS = 90;
+
+    // Behavior model: conservative defaults (tune only in code).
+    const model = {
+      openP: 0.82,      // chance app opened on a day
+      finP:  0.78,      // finalize probability when opened and usable
+      missQP:0.06,      // quarter missing probability -> unusable day
+      lambda:4.2,       // mean taps on an opened day
+      eventMix: [
+        { k: "MIND", w: 1.2 },
+        { k: "DEEP", w: 1.0 },
+        { k: "BODY", w: 1.3 },
+        { k: "FOOD", w: 1.1 },
+        { k: "REST", w: 1.0 },
+        { k: "BAD",  w: 0.7 }
+      ]
+    };
+
+    let openedDays = 0;
+    let finalizedDays = 0;
+
+    for (let s = 0; s < SIMS; s++) {
+      for (let d = 0; d < DAYS; d++) {
+        const opened = rand() < model.openP;
+        if (!opened) continue;
+        openedDays++;
+
+        const quarterMissing = rand() < model.missQP;
+        if (quarterMissing) continue;
+
+        // simulate taps to stress caps (but presence score uses finalize/opened)
+        const intended = approxPoisson(model.lambda);
+        const counts = Object.fromEntries(EVT_TYPES.map(t => [t, 0]));
+        let total = 0;
+        for (let i = 0; i < intended + 30; i++) { // allow overflow to test caps
+          const t = sampleCat(model.eventMix);
+          if (total >= HARDEN.MAX_EVENTS_PER_DAY) break;
+          if (counts[t] >= HARDEN.MAX_PER_TYPE) continue;
+          counts[t]++; total++;
+        }
+
+        const finalized = rand() < model.finP;
+        if (finalized) finalizedDays++;
+      }
+    }
+
+    if (openedDays === 0) return null;
+    return clamp01(finalizedDays / openedDays);
+  }
+
+  /* =========================
      STATE
      ========================= */
-  let currentIso = todayISO();
-  let day = loadDay(currentIso);
+  let currentIso;
+  let day;
 
-  let lastAction = { type: "init", detail: "", ts: Date.now() };
-  let lastDisabledWhy = "—";
+  // Cache MC once per run; never auto-run (no background work).
+  let mcPresence01 = null;
 
   function setStatus(msg, kind = "muted") {
     statusText.textContent = msg || "";
@@ -298,13 +443,6 @@
 
   function applyQuarterTheme() {
     document.body.setAttribute("data-q", day.quarter || "");
-  }
-
-  function computeDisabledReason() {
-    if (day.finalized) return "Day is locked (finalized).";
-    if (!day.quarter) return "Quarter missing.";
-    if (day.events.length >= HARDEN.MAX_EVENTS_PER_DAY) return "Daily cap reached.";
-    return "—";
   }
 
   function render() {
@@ -327,7 +465,7 @@
       btn.disabled = day.finalized;
     });
 
-    quarterHint.textContent = day.quarter ? `Selected: ${day.quarter}` : "Valitse quarter yhdellä napautuksella.";
+    quarterHint.textContent = day.quarter ? `Selected: ${day.quarter}` : "Select quarter with one tap.";
 
     // Event buttons
     const c = countsByType(day.events);
@@ -346,12 +484,13 @@
     btnUndo.disabled = day.finalized || day.events.length === 0;
     btnFinalize.disabled = day.finalized;
 
-    // Caps + Close
+    // Caps
     const remaining = Math.max(0, HARDEN.MAX_EVENTS_PER_DAY - day.events.length);
     capsText.textContent = `Remaining: ${remaining}`;
 
-    lineWorked.textContent = day.close?.worked ?? "—";
-    lineHurt.textContent = day.close?.hurt ?? "—";
+    // Close
+    lineWorked.textContent   = day.close?.worked ?? "—";
+    lineHurt.textContent     = day.close?.hurt ?? "—";
     lineTomorrow.textContent = day.close?.tomorrow ?? "—";
 
     lockHint.textContent = day.finalized
@@ -359,16 +498,14 @@
       : (!day.quarter ? "Quarter required before logging events." : "");
 
     applyQuarterTheme();
-    lastDisabledWhy = computeDisabledReason();
 
-    // If diagnostics open, live-refresh snapshot
-    if (!ovDiag.classList.contains("hidden")) refreshDiagnostics();
+    // If diagnostics open, refresh diagram
+    if (!ovDiag.classList.contains("hidden")) refreshDiag();
   }
 
   function gotoIso(iso) {
     currentIso = iso;
     day = loadDay(currentIso);
-    lastAction = { type: "nav", detail: iso, ts: Date.now() };
     setStatus("", "muted");
     render();
   }
@@ -383,7 +520,6 @@
 
     day.quarter = q;
     saveDay(day);
-    lastAction = { type: "setQuarter", detail: q, ts: Date.now() };
     setStatus(`${q} selected.`, "ok");
     render();
   }
@@ -402,16 +538,10 @@
     if (!EVT_TYPES.includes(t)) return;
 
     const why = canLogEvent(t);
-    if (why) {
-      lastAction = { type: "logDenied", detail: why, ts: Date.now() };
-      setStatus(why, "danger");
-      render();
-      return;
-    }
+    if (why) { setStatus(why, "danger"); render(); return; }
 
     day.events.push({ t, ts: Date.now() });
     saveDay(day);
-    lastAction = { type: "logEvent", detail: t, ts: Date.now() };
     setStatus(`${t} logged.`, "ok");
     render();
   }
@@ -422,7 +552,6 @@
 
     const last = day.events.pop();
     saveDay(day);
-    lastAction = { type: "undo", detail: last ? last.t : "none", ts: Date.now() };
     setStatus(last ? `Undid ${last.t}.` : "Nothing to undo.", last ? "ok" : "muted");
     render();
   }
@@ -431,7 +560,6 @@
     if (!allowTap("finalize")) return;
 
     if (day.finalized) {
-      lastAction = { type: "finalize", detail: "idempotent", ts: Date.now() };
       setStatus("Already finalized (idempotent).", "muted");
       render();
       return;
@@ -440,7 +568,7 @@
     day.close = summarizeDay(day);
     day.finalized = true;
     saveDay(day);
-    lastAction = { type: "finalize", detail: "locked", ts: Date.now() };
+
     setStatus("Finalized. Locked.", "ok");
     render();
   }
@@ -455,7 +583,6 @@
     rHurt.textContent = s.hurt;
     rTomorrow.textContent = s.tomorrow;
     ovReview.classList.remove("hidden");
-    lastAction = { type: "openReview", detail: "", ts: Date.now() };
   }
 
   function closeReview() {
@@ -471,7 +598,6 @@
       btn.classList.toggle("selected", !!exp && exp.name === name);
     });
     ovExp.classList.remove("hidden");
-    lastAction = { type: "openExp", detail: "", ts: Date.now() };
   }
 
   function closeExp() {
@@ -481,9 +607,12 @@
 
   function chooseExp(name) {
     if (!allowTap(`chooseExp:${name}`)) return;
-    saveExp(name, todayISO());
-    lastAction = { type: "chooseExp", detail: name, ts: Date.now() };
-    setStatus(`EXP set: ${name} (Day 1).`, "ok");
+
+    // If a startIso is set (e.g., tomorrow), use it. Else use today.
+    const startIso = loadStartIso() || todayISO();
+    saveExp(name, startIso);
+
+    setStatus(`EXP set: ${name} (start ${startIso}).`, "ok");
     ovExp.classList.add("hidden");
     render();
   }
@@ -491,7 +620,6 @@
   function clearExpTapped() {
     if (!allowTap("clearExp")) return;
     clearExp();
-    lastAction = { type: "clearExp", detail: "", ts: Date.now() };
     setStatus("EXP cleared.", "ok");
     ovExp.classList.add("hidden");
     render();
@@ -500,8 +628,7 @@
   function openDiag() {
     if (!allowTap("openDiag")) return;
     ovDiag.classList.remove("hidden");
-    refreshDiagnostics();
-    lastAction = { type: "openDiag", detail: "", ts: Date.now() };
+    refreshDiag();
   }
 
   function closeDiag() {
@@ -510,217 +637,47 @@
   }
 
   /* =========================
-     DIAGNOSTICS
+     DIAGNOSTIC RENDER
      ========================= */
-  function storageStats() {
-    let bytes = 0;
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      const v = localStorage.getItem(k);
-      keys.push(k);
-      bytes += (k?.length || 0) + (v?.length || 0);
+  function refreshDiag() {
+    const obs01 = observedPresenceScore01();
+    const text = barWithMarkers(obs01, mcPresence01);
+
+    dBar.textContent = text;
+
+    if (obs01 == null && mcPresence01 == null) {
+      dLabel.textContent = "No data yet.";
+    } else if (obs01 != null && mcPresence01 == null) {
+      dLabel.textContent = `You so far: ${(obs01*100).toFixed(0)}% presence`;
+    } else if (obs01 == null && mcPresence01 != null) {
+      dLabel.textContent = `Monte Carlo expected: ${(mcPresence01*100).toFixed(0)}% presence`;
+    } else {
+      dLabel.textContent = `You: ${(obs01*100).toFixed(0)}% | MC(90d): ${(mcPresence01*100).toFixed(0)}%`;
     }
-    keys.sort();
-    return { keys, approxChars: bytes };
-  }
-
-  function refreshDiagnostics(mcText) {
-    const exp = loadExp();
-    const c = countsByType(day.events);
-    const st = storageStats();
-
-    dState.textContent =
-      `iso=${currentIso} | quarter=${day.quarter || "—"} | events=${day.events.length} | finalized=${day.finalized}`;
-
-    dWhy.textContent = lastDisabledWhy;
-
-    dStorage.textContent =
-      `keys=${st.keys.length} | approxChars=${st.approxChars}`;
-
-    dJson.textContent = JSON.stringify({
-      harden: HARDEN,
-      currentIso,
-      lastAction,
-      disabledReason: lastDisabledWhy,
-      exp,
-      counts: c,
-      day,
-      storageKeys: st.keys.slice(0, 50) // cap display
-    }, null, 2);
-
-    if (typeof mcText === "string") dMC.textContent = mcText;
-  }
-
-  function nukeData() {
-    if (!allowTap("nuke")) return;
-    // Remove only our namespace
-    const toDelete = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && (k.startsWith(LS_DAY_PREFIX) || k === LS_EXP)) toDelete.push(k);
-    }
-    toDelete.forEach(k => localStorage.removeItem(k));
-    lastAction = { type: "nukeData", detail: `deleted=${toDelete.length}`, ts: Date.now() };
-    setStatus("Data cleared (namespace).", "ok");
-    gotoIso(todayISO());
-    refreshDiagnostics();
   }
 
   /* =========================
-     MONTE CARLO (90 days)
+     RESET FOR TOMORROW
      ========================= */
-  function rand() { return Math.random(); }
+  function resetForTomorrow() {
+    if (!allowTap("resetTomorrow")) return;
 
-  // Sample from a categorical distribution: [{k, w}, ...]
-  function sampleCat(items) {
-    const total = items.reduce((s, it) => s + it.w, 0);
-    let r = rand() * total;
-    for (const it of items) {
-      r -= it.w;
-      if (r <= 0) return it.k;
-    }
-    return items[items.length - 1].k;
-  }
+    const tomorrow = addDaysISO(todayISO(), 1);
+    const deleted = nukeNamespace();
 
-  function clampInt(n, lo, hi) {
-    n = Math.floor(n);
-    if (n < lo) return lo;
-    if (n > hi) return hi;
-    return n;
-  }
+    // Set startIso to tomorrow so EXP day count begins tomorrow.
+    saveStartIso(tomorrow);
 
-  // Poisson-ish without heavy math: sum of Bernoullis for small lambda band
-  function approxPoisson(lambda) {
-    // For lambda up to ~10; good enough for diagnostic MC.
-    const L = Math.exp(-lambda);
-    let k = 0, p = 1;
-    do { k++; p *= rand(); } while (p > L);
-    return k - 1;
-  }
+    // Also set view to tomorrow (so when you open it tomorrow, it already points there).
+    currentIso = tomorrow;
+    day = loadDay(currentIso);
 
-  function runMonteCarlo90d(opts = {}) {
-    const SIMS = clampInt(opts.sims ?? 10000, 1000, 50000);
-    const DAYS = 90;
+    // Clear MC cache.
+    mcPresence01 = null;
 
-    // Behavior model (tuneable): conservative & plausible
-    // - finalizeProbability: probability user finalizes a day they interacted with
-    // - openDaysProbability: chance user opens app on a given day
-    // - tapsLambda: average number of event taps on an opened day
-    // - badRate: probability an event tap is BAD
-    // - quarterMissingRate: chance user forgets quarter (then 0 events logged)
-    const model = {
-      openDaysProbability: opts.openP ?? 0.82,
-      finalizeProbability: opts.finP ?? 0.78,
-      quarterMissingRate: opts.missQP ?? 0.06,
-      tapsLambda: opts.lambda ?? 4.2,
-      eventMix: [
-        { k: "MIND", w: 1.2 },
-        { k: "DEEP", w: 1.0 },
-        { k: "BODY", w: 1.3 },
-        { k: "FOOD", w: 1.1 },
-        { k: "REST", w: 1.0 },
-        { k: "BAD",  w: 0.7 }
-      ]
-    };
-
-    let totalOpenedDays = 0;
-    let totalFinalizedDays = 0;
-    let totalEvents = 0;
-
-    let capHitDays = 0;
-    let perTypeCapHitDays = 0;
-    let lockedEditsAttempted = 0;
-
-    let daysWithBad = 0;
-    let daysNoRest = 0;
-
-    for (let s = 0; s < SIMS; s++) {
-      for (let d = 0; d < DAYS; d++) {
-        const opened = rand() < model.openDaysProbability;
-        if (!opened) continue;
-        totalOpenedDays++;
-
-        const quarterMissing = rand() < model.quarterMissingRate;
-        let events = [];
-        let finalized = false;
-
-        if (!quarterMissing) {
-          // generate taps
-          const intended = approxPoisson(model.tapsLambda);
-          const intendedClamped = clampInt(intended, 0, HARDEN.MAX_EVENTS_PER_DAY + 50); // allow overflow to test cap
-
-          const counts = Object.fromEntries(EVT_TYPES.map(t => [t, 0]));
-          for (let i = 0; i < intendedClamped; i++) {
-            const t = sampleCat(model.eventMix);
-
-            // apply caps (like app)
-            if (events.length >= HARDEN.MAX_EVENTS_PER_DAY) { capHitDays++; break; }
-            if (counts[t] >= HARDEN.MAX_PER_TYPE) { perTypeCapHitDays++; continue; }
-
-            events.push(t);
-            counts[t]++;
-          }
-
-          totalEvents += events.length;
-
-          const c = counts;
-          if (c.BAD > 0) daysWithBad++;
-          if (c.REST === 0) daysNoRest++;
-
-          // finalize decision
-          finalized = rand() < model.finalizeProbability;
-          if (finalized) totalFinalizedDays++;
-
-          // attempt edits after lock (models user stupidity)
-          if (finalized && rand() < 0.10) lockedEditsAttempted++;
-        } else {
-          // quarter missing => user can't log events
-          finalized = false;
-        }
-      }
-    }
-
-    // Normalize
-    const denomOpened = Math.max(1, totalOpenedDays);
-    const denomSimDays = SIMS * DAYS;
-
-    const avgOpenedDays90 = totalOpenedDays / SIMS;
-    const avgFinalizedDays90 = totalFinalizedDays / SIMS;
-    const avgEventsPerOpenedDay = totalEvents / denomOpened;
-
-    const capHitRatePerOpenedDay = capHitDays / denomOpened;
-    const perTypeCapRatePerOpenedDay = perTypeCapHitDays / denomOpened;
-
-    const finalizeRateGivenOpened = totalFinalizedDays / denomOpened;
-
-    const badRateOpenedDays = daysWithBad / denomOpened;
-    const noRestRateOpenedDays = daysNoRest / denomOpened;
-
-    const report = [
-      `Monte Carlo 90d (SIMS=${SIMS})`,
-      `Model: openP=${model.openDaysProbability}, finP=${model.finalizeProbability}, missQP=${model.quarterMissingRate}, lambda=${model.tapsLambda}`,
-      ``,
-      `Expected opened days / 90: ${avgOpenedDays90.toFixed(1)}`,
-      `Expected finalized days / 90: ${avgFinalizedDays90.toFixed(1)}`,
-      `Finalize rate | opened day: ${(finalizeRateGivenOpened * 100).toFixed(1)}%`,
-      ``,
-      `Avg event taps / opened day: ${avgEventsPerOpenedDay.toFixed(2)}`,
-      `Cap-hit rate | opened day: ${(capHitRatePerOpenedDay * 100).toFixed(2)}%`,
-      `Per-type-cap rate | opened day: ${(perTypeCapRatePerOpenedDay * 100).toFixed(2)}%`,
-      ``,
-      `Days with BAD | opened day: ${(badRateOpenedDays * 100).toFixed(1)}%`,
-      `Days with NO REST | opened day: ${(noRestRateOpenedDays * 100).toFixed(1)}%`,
-      ``,
-      `Locked edit attempts (modeled): ${(lockedEditsAttempted / denomSimDays * 100).toFixed(2)}% of all sim-days`,
-      ``,
-      `Interpretation (diagnostic):`,
-      `- If cap-hit > ~1–2%, daily cap is probably too low for your real behavior OR you spam.`,
-      `- If finalize rate < ~70%, your loop leaks; you are not closing days reliably.`,
-      `- NO REST rate is a “missing signal” detector (not a bio claim).`
-    ].join("\\n");
-
-    return report;
+    setStatus(`Reset. Start = ${tomorrow}. (cleared ${deleted} keys)`, "ok");
+    ovDiag.classList.add("hidden");
+    render();
   }
 
   /* =========================
@@ -751,12 +708,10 @@
     gotoIso(todayISO());
   });
 
-  // Review overlay
   btnReview.addEventListener("click", openReview);
   btnCloseReview.addEventListener("click", closeReview);
   ovReview.addEventListener("click", (e) => { if (e.target === ovReview) closeReview(); });
 
-  // EXP overlay
   btnExp.addEventListener("click", openExp);
   btnCloseExp.addEventListener("click", closeExp);
   ovExp.addEventListener("click", (e) => { if (e.target === ovExp) closeExp(); });
@@ -767,25 +722,36 @@
   });
   btnClearExp.addEventListener("click", clearExpTapped);
 
-  // Diagnostics overlay
   btnDiag.addEventListener("click", openDiag);
   btnCloseDiag.addEventListener("click", closeDiag);
   ovDiag.addEventListener("click", (e) => { if (e.target === ovDiag) closeDiag(); });
 
   btnRunMC.addEventListener("click", () => {
     if (!allowTap("runMC")) return;
-    const rep = runMonteCarlo90d({ sims: 10000 });
-    refreshDiagnostics(rep);
+    // Run once on demand; no background loops.
+    mcPresence01 = runMonteCarlo90dPresence01(10000);
+    refreshDiag();
   });
 
-  btnClearAll.addEventListener("click", nukeData);
+  btnResetTomorrow.addEventListener("click", resetForTomorrow);
 
-  // Defensive: block dblclick zoom weirdness
+  // Defensive: block dblclick zoom quirks
   document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
 
   /* =========================
      INIT
      ========================= */
+  const startIso = loadStartIso();
+  const tISO = todayISO();
+
+  // If you reset for tomorrow, opening today should point at tomorrow (start day).
+  if (startIso && startIso > tISO) {
+    currentIso = startIso;
+  } else {
+    currentIso = tISO;
+  }
+
+  day = loadDay(currentIso);
   render();
   setStatus("");
 })();
