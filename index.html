@@ -1,21 +1,21 @@
 <!doctype html>
-<html lang="fi">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Biologinen Close</title>
+  <title>Biological Close</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="app">
     <header class="top">
       <div class="row">
-        <button class="nav" id="btnYesterday">Yesterday</button>
+        <button class="nav" id="btnYesterday" aria-label="Yesterday">Yesterday</button>
         <div class="center">
           <div class="title" id="dateTitle">Today</div>
           <div class="sub" id="dateSub"></div>
         </div>
-        <button class="nav" id="btnToday">Today</button>
+        <button class="nav" id="btnToday" aria-label="Today">Today</button>
       </div>
 
       <div class="row">
@@ -23,8 +23,8 @@
           <span class="pillK">EXP</span>
           <span class="pillV" id="expText">—</span>
         </button>
-        <button class="ghost" id="btnReview">Review</button>
-        <button class="ghost" id="btnDiag">Diag</button>
+        <button class="ghost" id="btnReview" aria-label="Review">Review</button>
+        <button class="ghost" id="btnDiag" aria-label="Diagnostics">Diag</button>
       </div>
     </header>
 
@@ -36,7 +36,7 @@
         <button class="btn" data-quarter="Q3">Q3</button>
         <button class="btn" data-quarter="Q4">Q4</button>
       </div>
-      <div class="hint" id="quarterHint">Valitse quarter yhdellä napautuksella.</div>
+      <div class="hint" id="quarterHint">Select quarter with one tap.</div>
     </section>
 
     <section class="card">
@@ -84,7 +84,7 @@
         <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="rHurt">—</span></div>
         <div class="line"><span class="lab">TOMORROW</span><span class="val" id="rTomorrow">—</span></div>
       </div>
-      <div class="hint">Ei kaavioita. Ei guilt-mekaniikkaa. Pelkkä tiiviste.</div>
+      <div class="hint">No charts. No guilt. Just a close.</div>
     </div>
   </div>
 
@@ -95,7 +95,7 @@
         <div class="sheetTitle">Experiment (tap-only)</div>
         <button class="ghost" id="btnCloseExp">Close</button>
       </div>
-      <div class="hint tight">Valitse nimi (1 tap). Start = tänään. Ei kirjoittamista.</div>
+      <div class="hint tight">Pick a name (1 tap). Start = tomorrow if you reset. No typing.</div>
       <div class="grid2" id="expGrid">
         <button class="btn" data-exp="Strength Block">Strength Block</button>
         <button class="btn" data-exp="Hypertrophy Block">Hypertrophy Block</button>
@@ -107,11 +107,11 @@
       <div class="row">
         <button class="ctrl danger" id="btnClearExp">Clear EXP</button>
       </div>
-      <div class="hint">Clear poistaa experiment-framingin (ei vaikuta päivädataan).</div>
+      <div class="hint">Clearing EXP does not touch day data.</div>
     </div>
   </div>
 
-  <!-- DIAGNOSTICS -->
+  <!-- DIAG -->
   <div class="overlay hidden" id="ovDiag">
     <div class="sheet" role="dialog" aria-modal="true">
       <div class="row">
@@ -120,22 +120,26 @@
       </div>
 
       <div class="box">
-        <div class="line"><span class="lab">STATE</span><span class="val" id="dState">—</span></div>
-        <div class="line"><span class="lab">DISABLED REASON</span><span class="val" id="dWhy">—</span></div>
-        <div class="line"><span class="lab">STORAGE</span><span class="val" id="dStorage">—</span></div>
+        <div class="line"><span class="lab">GHOST ↔ PRESENCE</span><span class="val" id="dLabel">—</span></div>
       </div>
+
+      <pre class="pre" id="dBar"></pre>
 
       <div class="row">
-        <button class="ctrl" id="btnRunMC">Run Monte Carlo (90d)</button>
-        <button class="ctrl" id="btnClearAll">Nuke Data</button>
+        <button class="ctrl" id="btnRunMC">Monte Carlo (90d)</button>
+        <button class="ctrl danger" id="btnResetTomorrow">Reset for Tomorrow</button>
       </div>
 
-      <pre class="pre" id="dJson"></pre>
-      <pre class="pre" id="dMC"></pre>
-
-      <div class="hint">Monte Carlo on diagnostiikkaa: se arvioi “cap-hit” riskiä ja finalize-käyttäytymistä 90 päivän kokeessa.</div>
+      <div class="hint">
+        Reset for Tomorrow clears only this app’s storage and sets the experiment start date to tomorrow.
+        Monte Carlo is just a rough expectation lens (not biology).
+      </div>
     </div>
   </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
 
   <script src="app.js"></script>
 </body>
