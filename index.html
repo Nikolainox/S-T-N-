@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Biological Close</title>
+  <title>Decision Ledger</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -19,9 +19,9 @@
       </div>
 
       <div class="row">
-        <button class="pill" id="btnExp" aria-label="Experiment">
-          <span class="pillK">EXP</span>
-          <span class="pillV" id="expText">—</span>
+        <button class="pill" id="btnBelief" aria-label="Belief">
+          <span class="pillK">BELIEF</span>
+          <span class="pillV" id="beliefText">—</span>
         </button>
         <button class="ghost" id="btnReview" aria-label="Review">Review</button>
         <button class="ghost" id="btnDiag" aria-label="Diagnostics">Diag</button>
@@ -29,25 +29,14 @@
     </header>
 
     <section class="card">
-      <div class="k">Quarter</div>
-      <div class="grid4" id="quarterGrid">
-        <button class="btn" data-quarter="Q1">Q1</button>
-        <button class="btn" data-quarter="Q2">Q2</button>
-        <button class="btn" data-quarter="Q3">Q3</button>
-        <button class="btn" data-quarter="Q4">Q4</button>
-      </div>
-      <div class="hint" id="quarterHint">Select quarter with one tap.</div>
-    </section>
-
-    <section class="card">
-      <div class="k">Events</div>
+      <div class="k">Decision Events</div>
       <div class="grid3" id="eventGrid">
-        <button class="btn" data-evt="MIND">MIND</button>
-        <button class="btn" data-evt="DEEP">DEEP</button>
-        <button class="btn" data-evt="BODY">BODY</button>
-        <button class="btn" data-evt="FOOD">FOOD</button>
-        <button class="btn" data-evt="REST">REST</button>
-        <button class="btn bad" data-evt="BAD">BAD</button>
+        <button class="btn" data-evt="DECISION_MADE">DECISION<br/>MADE</button>
+        <button class="btn" data-evt="DECISION_DEFERRED">DECISION<br/>DEFERRED</button>
+        <button class="btn" data-evt="DECISION_AVOIDED">DECISION<br/>AVOIDED</button>
+        <button class="btn" data-evt="EXECUTION">EXECUTION</button>
+        <button class="btn" data-evt="CONTEXT_SHIFT">CONTEXT<br/>SHIFT</button>
+        <button class="btn bad" data-evt="DRAG">DRAG</button>
       </div>
 
       <div class="row">
@@ -64,9 +53,9 @@
     <section class="card">
       <div class="k">Close</div>
       <div class="box">
-        <div class="line"><span class="lab">WHAT WORKED</span><span class="val" id="lineWorked">—</span></div>
-        <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="lineHurt">—</span></div>
-        <div class="line"><span class="lab">TOMORROW</span><span class="val" id="lineTomorrow">—</span></div>
+        <div class="line"><span class="lab">WHAT MOVED FORWARD</span><span class="val" id="lineMoved">—</span></div>
+        <div class="line"><span class="lab">WHAT CREATED DRAG</span><span class="val" id="lineDrag">—</span></div>
+        <div class="line"><span class="lab">NEXT DECISION</span><span class="val" id="lineNext">—</span></div>
       </div>
       <div class="hint" id="lockHint"></div>
     </section>
@@ -80,34 +69,39 @@
         <button class="ghost" id="btnCloseReview">Close</button>
       </div>
       <div class="box">
-        <div class="line"><span class="lab">WHAT WORKED</span><span class="val" id="rWorked">—</span></div>
-        <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="rHurt">—</span></div>
-        <div class="line"><span class="lab">TOMORROW</span><span class="val" id="rTomorrow">—</span></div>
+        <div class="line"><span class="lab">MOVED</span><span class="val" id="rMoved">—</span></div>
+        <div class="line"><span class="lab">DRAG</span><span class="val" id="rDrag">—</span></div>
+        <div class="line"><span class="lab">NEXT</span><span class="val" id="rNext">—</span></div>
       </div>
-      <div class="hint">No charts. No guilt. Just a close.</div>
+      <div class="hint">No charts. No guilt. Just closure.</div>
     </div>
   </div>
 
-  <!-- EXP -->
-  <div class="overlay hidden" id="ovExp">
+  <!-- BELIEF -->
+  <div class="overlay hidden" id="ovBelief">
     <div class="sheet" role="dialog" aria-modal="true">
       <div class="row">
-        <div class="sheetTitle">Experiment (tap-only)</div>
-        <button class="ghost" id="btnCloseExp">Close</button>
+        <div class="sheetTitle">Belief (tap-only)</div>
+        <button class="ghost" id="btnCloseBelief">Close</button>
       </div>
-      <div class="hint tight">Pick a name (1 tap). Start = tomorrow if you reset. No typing.</div>
-      <div class="grid2" id="expGrid">
-        <button class="btn" data-exp="Strength Block">Strength Block</button>
-        <button class="btn" data-exp="Hypertrophy Block">Hypertrophy Block</button>
-        <button class="btn" data-exp="Cut / Recomp">Cut / Recomp</button>
-        <button class="btn" data-exp="Peaking">Peaking</button>
-        <button class="btn" data-exp="Skill / Technique">Skill / Technique</button>
-        <button class="btn" data-exp="Recovery Block">Recovery Block</button>
+
+      <div class="hint tight">Pick ONE driver you believe matters most. Set once, update rarely.</div>
+
+      <div class="grid2" id="beliefGrid">
+        <button class="btn" data-belief="EXECUTION">EXECUTION</button>
+        <button class="btn" data-belief="ENVIRONMENT">ENVIRONMENT</button>
+        <button class="btn" data-belief="ENERGY">ENERGY</button>
+        <button class="btn" data-belief="CLARITY">CLARITY</button>
       </div>
-      <div class="row">
-        <button class="ctrl danger" id="btnClearExp">Clear EXP</button>
+
+      <div class="k" style="margin-top:14px;">Evidence update</div>
+      <div class="grid1" id="evidenceGrid">
+        <button class="btn" data-evidence="STRONGER">Stronger than expected</button>
+        <button class="btn" data-evidence="SAME">About the same</button>
+        <button class="btn" data-evidence="WEAKER">Weaker than expected</button>
       </div>
-      <div class="hint">Clearing EXP does not touch day data.</div>
+
+      <div class="hint">Evidence taps don’t change past days. They only log a belief update event.</div>
     </div>
   </div>
 
@@ -119,27 +113,11 @@
         <button class="ghost" id="btnCloseDiag">Close</button>
       </div>
 
-      <div class="box">
-        <div class="line"><span class="lab">GHOST ↔ PRESENCE</span><span class="val" id="dLabel">—</span></div>
-      </div>
+      <pre class="pre" id="diagText"></pre>
 
-      <pre class="pre" id="dBar"></pre>
-
-      <div class="row">
-        <button class="ctrl" id="btnRunMC">Monte Carlo (90d)</button>
-        <button class="ctrl danger" id="btnResetTomorrow">Reset for Tomorrow</button>
-      </div>
-
-      <div class="hint">
-        Reset for Tomorrow clears only this app’s storage and sets the experiment start date to tomorrow.
-        Monte Carlo is just a rough expectation lens (not biology).
-      </div>
+      <div class="hint">Ghost ↔ Presence is derived from your behavior: open days vs finalized days, with an avoidance penalty.</div>
     </div>
   </div>
-
-  <script src="app.js"></script>
-</body>
-</html>
 
   <script src="app.js"></script>
 </body>
