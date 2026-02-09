@@ -9,6 +9,12 @@
 <body>
   <main class="app">
     <header class="top">
+      <div class="tickerWrap" aria-hidden="true">
+        <div class="holoLine"></div>
+        <div class="ticker" id="beliefTicker">I believe: — · Evidence: — · —:—</div>
+        <div class="holoLine"></div>
+      </div>
+
       <div class="row">
         <button class="nav" id="btnYesterday" aria-label="Yesterday">Yesterday</button>
         <div class="center">
@@ -85,7 +91,7 @@
         <button class="ghost" id="btnCloseBelief">Close</button>
       </div>
 
-      <div class="hint tight">Pick ONE driver you believe matters most. Set once, update rarely.</div>
+      <div class="hint tight">Pick ONE driver you believe matters most. Update rarely.</div>
 
       <div class="grid2" id="beliefGrid">
         <button class="btn" data-belief="EXECUTION">EXECUTION</button>
@@ -101,7 +107,7 @@
         <button class="btn" data-evidence="WEAKER">Weaker than expected</button>
       </div>
 
-      <div class="hint">Evidence taps don’t change past days. They only log a belief update event.</div>
+      <div class="hint">Evidence taps log an update. They do not alter past days.</div>
     </div>
   </div>
 
@@ -115,7 +121,13 @@
 
       <pre class="pre" id="diagText"></pre>
 
-      <div class="hint">Ghost ↔ Presence is derived from your behavior: open days vs finalized days, with an avoidance penalty.</div>
+      <div class="row" style="margin-top:12px;">
+        <button class="ctrl danger" id="btnResetTomorrow">Reset for Tomorrow</button>
+      </div>
+
+      <div class="hint">
+        Reset wipes only this app’s local storage and sets the start date to tomorrow.
+      </div>
     </div>
   </div>
 
