@@ -23,15 +23,18 @@
     MAX_PER_TYPE: 5
   });
 
-  const LS_ROOT = "decisionLedger.v1";
-  const LS_DAY_PREFIX = `${LS_ROOT}.day.`;      // + YYYY-MM-DD
-  const LS_BELIEF = `${LS_ROOT}.belief`;        // string
-  const LS_BELIEF_LOG = `${LS_ROOT}.beliefLog`; // array of {iso, evidence, ts}
+  const LS_ROOT = "decisionLedger.v2";
+  const LS_DAY_PREFIX   = `${LS_ROOT}.day.`;       // + YYYY-MM-DD
+  const LS_BELIEF       = `${LS_ROOT}.belief`;     // string
+  const LS_BELIEF_LOG   = `${LS_ROOT}.beliefLog`;  // array of {iso, evidence, ts}
+  const LS_START        = `${LS_ROOT}.start`;      // {startIso}
 
   /* =========================
      DOM
      ========================= */
   const $ = (id) => document.getElementById(id);
+
+  const beliefTicker = $("beliefTicker");
 
   const dateTitle = $("dateTitle");
   const dateSub   = $("dateSub");
@@ -68,10 +71,11 @@
   const evidenceGrid   = $("evidenceGrid");
 
   // Diag
-  const btnDiag       = $("btnDiag");
-  const ovDiag        = $("ovDiag");
-  const btnCloseDiag  = $("btnCloseDiag");
-  const diagText      = $("diagText");
+  const btnDiag        = $("btnDiag");
+  const ovDiag         = $("ovDiag");
+  const btnCloseDiag   = $("btnCloseDiag");
+  const diagText       = $("diagText");
+  const btnResetTomorrow = $("btnResetTomorrow");
 
   /* =========================
      TIME (Europe/Helsinki)
@@ -97,6 +101,15 @@
       timeZone: "Europe/Helsinki",
       weekday: "short", year: "numeric", month: "short", day: "numeric"
     }).format(d);
+  }
+
+  function helsinkiTimeHHMM() {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Helsinki",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date());
   }
 
   /* =========================
@@ -168,6 +181,38 @@
     localStorage.setItem(LS_BELIEF_LOG, JSON.stringify(arr));
   }
 
+  function lastEvidenceLabel() {
+    const arr = loadBeliefLog();
+    const last = arr[arr.length - 1];
+    if (!last) return "—";
+    if (last.evidence === "STRONGER") return "Stronger";
+    if (last.evidence === "SAME") return "Same";
+    if (last.evidence === "WEAKER") return "Weaker";
+    return "—";
+  }
+
+  function loadStartIso() {
+    const raw = localStorage.getItem(LS_START);
+    const obj = safeParse(raw);
+    if (!obj || typeof obj.startIso !== "string") return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(obj.startIso) ? obj.startIso : null;
+  }
+
+  function saveStartIso(startIso) {
+    localStorage.setItem(LS_START, JSON.stringify({ startIso }));
+  }
+
+  function nukeNamespace() {
+    const toDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith(LS_DAY_PREFIX) || k === LS_BELIEF || k === LS_BELIEF_LOG || k === LS_START) toDelete.push(k);
+    }
+    toDelete.forEach(k => localStorage.removeItem(k));
+    return toDelete.length;
+  }
+
   /* =========================
      TAP HARDENING
      ========================= */
@@ -228,7 +273,7 @@
     const days = keys
       .map(k => safeParse(localStorage.getItem(k)))
       .filter(d => d && d.finalized && typeof d.iso === "string")
-      .sort((a, b) => (a.iso < b.iso ? 1 : -1)); // desc
+      .sort((a, b) => (a.iso < b.iso ? 1 : -1));
 
     const last7 = days.slice(0, 7);
     if (last7.length === 0) return { moved: "—", drag: "—", next: "—" };
@@ -319,10 +364,20 @@
   }
 
   /* =========================
+     TICKER
+     ========================= */
+  function updateTicker() {
+    const b = loadBelief() || "—";
+    const ev = lastEvidenceLabel();
+    const t = helsinkiTimeHHMM();
+    beliefTicker.textContent = `I believe: ${b} · Evidence: ${ev} · ${t}`;
+  }
+
+  /* =========================
      STATE
      ========================= */
-  let currentIso = todayISO();
-  let day = loadDay(currentIso);
+  let currentIso;
+  let day;
 
   function setStatus(msg, kind = "muted") {
     statusText.textContent = msg || "";
@@ -340,7 +395,6 @@
     const belief = loadBelief();
     beliefText.textContent = belief ? belief : "—";
 
-    // Event buttons disabled state
     const c = countsByType(day.events);
     [...eventGrid.querySelectorAll("button[data-evt]")].forEach(btn => {
       const t = btn.getAttribute("data-evt");
@@ -364,7 +418,8 @@
       ? "Locked. Finalize is idempotent; locked days cannot be edited."
       : "";
 
-    // If diagnostics open, live refresh (safe, no loops)
+    updateTicker();
+
     if (!ovDiag.classList.contains("hidden")) renderDiagnostic();
   }
 
@@ -447,7 +502,6 @@
     if (!allowTap("openBelief")) return;
     const b = loadBelief();
     [...beliefGrid.querySelectorAll("button[data-belief]")].forEach(btn => {
-      btn.disabled = false;
       btn.classList.toggle("selected", btn.getAttribute("data-belief") === b);
     });
     ovBelief.classList.remove("hidden");
@@ -469,6 +523,7 @@
     if (!allowTap(`evidence:${ev}`)) return;
     appendBeliefEvidence(currentIso, ev);
     setStatus(`Evidence: ${ev}`, "ok");
+    render();
   }
 
   function openDiag() {
@@ -480,6 +535,21 @@
   function closeDiag() {
     if (!allowTap("closeDiag")) return;
     ovDiag.classList.add("hidden");
+  }
+
+  function resetForTomorrow() {
+    if (!allowTap("resetTomorrow")) return;
+
+    const tomorrow = addDaysISO(todayISO(), 1);
+    const deleted = nukeNamespace();
+    saveStartIso(tomorrow);
+
+    currentIso = tomorrow;
+    day = loadDay(currentIso);
+
+    setStatus(`Reset. Start = ${tomorrow}. (cleared ${deleted} keys)`, "ok");
+    ovDiag.classList.add("hidden");
+    render();
   }
 
   /* =========================
@@ -504,12 +574,10 @@
     gotoIso(todayISO());
   });
 
-  // Review overlay
   btnReview.addEventListener("click", openReview);
   btnCloseReview.addEventListener("click", closeReview);
   ovReview.addEventListener("click", (e) => { if (e.target === ovReview) closeReview(); });
 
-  // Belief overlay
   btnBelief.addEventListener("click", openBelief);
   btnCloseBelief.addEventListener("click", closeBelief);
   ovBelief.addEventListener("click", (e) => { if (e.target === ovBelief) closeBelief(); });
@@ -526,17 +594,27 @@
     logEvidence(btn.getAttribute("data-evidence"));
   });
 
-  // Diag overlay
   btnDiag.addEventListener("click", openDiag);
   btnCloseDiag.addEventListener("click", closeDiag);
   ovDiag.addEventListener("click", (e) => { if (e.target === ovDiag) closeDiag(); });
 
-  // Defensive: block dblclick zoom quirks
+  btnResetTomorrow.addEventListener("click", resetForTomorrow);
+
   document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
 
+  // “Real-time” ticker update without continuous animation.
+  // Updates: on focus + once per minute.
+  window.addEventListener("focus", updateTicker);
+  setInterval(updateTicker, 60_000);
+
   /* =========================
-     INIT
+     INIT (start tomorrow if reset)
      ========================= */
+  const startIso = loadStartIso();
+  const tISO = todayISO();
+  currentIso = (startIso && startIso > tISO) ? startIso : tISO;
+
+  day = loadDay(currentIso);
   render();
   setStatus("");
 })();
