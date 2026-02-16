@@ -23,11 +23,10 @@
     MAX_PER_TYPE: 5
   });
 
-  const LS_ROOT = "decisionLedger.v2";
+  const LS_ROOT = "decisionLedger.final";
   const LS_DAY_PREFIX   = `${LS_ROOT}.day.`;       // + YYYY-MM-DD
   const LS_BELIEF       = `${LS_ROOT}.belief`;     // string
   const LS_BELIEF_LOG   = `${LS_ROOT}.beliefLog`;  // array of {iso, evidence, ts}
-  const LS_START        = `${LS_ROOT}.start`;      // {startIso}
 
   /* =========================
      DOM
@@ -75,7 +74,7 @@
   const ovDiag         = $("ovDiag");
   const btnCloseDiag   = $("btnCloseDiag");
   const diagText       = $("diagText");
-  const btnResetTomorrow = $("btnResetTomorrow");
+  const btnResetToday  = $("btnResetToday");
 
   /* =========================
      TIME (Europe/Helsinki)
@@ -86,15 +85,12 @@
       year: "numeric", month: "2-digit", day: "2-digit"
     }).format(date);
   }
-
   function todayISO() { return fmtISO(new Date()); }
-
   function addDaysISO(iso, deltaDays) {
     const d = new Date(iso + "T12:00:00");
     d.setDate(d.getDate() + deltaDays);
     return fmtISO(d);
   }
-
   function isoToHuman(iso) {
     const d = new Date(iso + "T12:00:00");
     return new Intl.DateTimeFormat("en-GB", {
@@ -102,13 +98,10 @@
       weekday: "short", year: "numeric", month: "short", day: "numeric"
     }).format(d);
   }
-
   function helsinkiTimeHHMM() {
     return new Intl.DateTimeFormat("en-GB", {
       timeZone: "Europe/Helsinki",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
+      hour: "2-digit", minute: "2-digit", hour12: false
     }).format(new Date());
   }
 
@@ -116,7 +109,6 @@
      STORAGE / SCHEMA
      ========================= */
   function safeParse(raw) { try { return JSON.parse(raw); } catch { return null; } }
-
   function clampLine(s) {
     const str = String(s ?? "—");
     return str.length <= 80 ? str : (str.slice(0, 77) + "…");
@@ -159,7 +151,6 @@
     const b = localStorage.getItem(LS_BELIEF);
     return BELIEFS.includes(b) ? b : null;
   }
-
   function saveBelief(b) {
     if (!BELIEFS.includes(b)) return;
     localStorage.setItem(LS_BELIEF, b);
@@ -191,23 +182,12 @@
     return "—";
   }
 
-  function loadStartIso() {
-    const raw = localStorage.getItem(LS_START);
-    const obj = safeParse(raw);
-    if (!obj || typeof obj.startIso !== "string") return null;
-    return /^\d{4}-\d{2}-\d{2}$/.test(obj.startIso) ? obj.startIso : null;
-  }
-
-  function saveStartIso(startIso) {
-    localStorage.setItem(LS_START, JSON.stringify({ startIso }));
-  }
-
   function nukeNamespace() {
     const toDelete = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k) continue;
-      if (k.startsWith(LS_DAY_PREFIX) || k === LS_BELIEF || k === LS_BELIEF_LOG || k === LS_START) toDelete.push(k);
+      if (k.startsWith(LS_DAY_PREFIX) || k === LS_BELIEF || k === LS_BELIEF_LOG) toDelete.push(k);
     }
     toDelete.forEach(k => localStorage.removeItem(k));
     return toDelete.length;
@@ -345,9 +325,7 @@
     const pos = Math.round(score01 * slots);
 
     let bar = "Ghost You ";
-    for (let i = 0; i <= slots; i++) {
-      bar += i === pos ? "▲" : "─";
-    }
+    for (let i = 0; i <= slots; i++) bar += (i === pos ? "▲" : "─");
     bar += " Presence You";
 
     const label =
@@ -364,7 +342,7 @@
   }
 
   /* =========================
-     TICKER
+     TICKER (no continuous animation)
      ========================= */
   function updateTicker() {
     const b = loadBelief() || "—";
@@ -376,8 +354,8 @@
   /* =========================
      STATE
      ========================= */
-  let currentIso;
-  let day;
+  let currentIso = todayISO();
+  let day = loadDay(currentIso);
 
   function setStatus(msg, kind = "muted") {
     statusText.textContent = msg || "";
@@ -492,7 +470,6 @@
     rNext.textContent  = s.next;
     ovReview.classList.remove("hidden");
   }
-
   function closeReview() {
     if (!allowTap("closeReview")) return;
     ovReview.classList.add("hidden");
@@ -506,19 +483,16 @@
     });
     ovBelief.classList.remove("hidden");
   }
-
   function closeBelief() {
     if (!allowTap("closeBelief")) return;
     ovBelief.classList.add("hidden");
   }
-
   function chooseBelief(b) {
     if (!allowTap(`belief:${b}`)) return;
     saveBelief(b);
     setStatus(`Belief set: ${b}`, "ok");
     render();
   }
-
   function logEvidence(ev) {
     if (!allowTap(`evidence:${ev}`)) return;
     appendBeliefEvidence(currentIso, ev);
@@ -531,23 +505,17 @@
     ovDiag.classList.remove("hidden");
     renderDiagnostic();
   }
-
   function closeDiag() {
     if (!allowTap("closeDiag")) return;
     ovDiag.classList.add("hidden");
   }
 
-  function resetForTomorrow() {
-    if (!allowTap("resetTomorrow")) return;
-
-    const tomorrow = addDaysISO(todayISO(), 1);
+  function resetForToday() {
+    if (!allowTap("resetToday")) return;
     const deleted = nukeNamespace();
-    saveStartIso(tomorrow);
-
-    currentIso = tomorrow;
+    currentIso = todayISO();
     day = loadDay(currentIso);
-
-    setStatus(`Reset. Start = ${tomorrow}. (cleared ${deleted} keys)`, "ok");
+    setStatus(`Reset complete. (cleared ${deleted} keys)`, "ok");
     ovDiag.classList.add("hidden");
     render();
   }
@@ -598,23 +566,18 @@
   btnCloseDiag.addEventListener("click", closeDiag);
   ovDiag.addEventListener("click", (e) => { if (e.target === ovDiag) closeDiag(); });
 
-  btnResetTomorrow.addEventListener("click", resetForTomorrow);
+  btnResetToday.addEventListener("click", resetForToday);
 
+  // Defensive: block dblclick zoom quirks
   document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
 
   // “Real-time” ticker update without continuous animation.
-  // Updates: on focus + once per minute.
   window.addEventListener("focus", updateTicker);
   setInterval(updateTicker, 60_000);
 
   /* =========================
-     INIT (start tomorrow if reset)
+     INIT
      ========================= */
-  const startIso = loadStartIso();
-  const tISO = todayISO();
-  currentIso = (startIso && startIso > tISO) ? startIso : tISO;
-
-  day = loadDay(currentIso);
   render();
   setStatus("");
 })();
