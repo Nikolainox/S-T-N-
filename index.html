@@ -1,136 +1,82 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Decision Ledger</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Personal OS</title>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <main class="app">
-    <header class="top">
-      <div class="tickerWrap" aria-hidden="true">
-        <div class="holoLine"></div>
-        <div class="ticker" id="beliefTicker">I believe: — · Evidence: — · —:—</div>
-        <div class="holoLine"></div>
-      </div>
+<main class="app">
 
-      <div class="row">
-        <button class="nav" id="btnYesterday" aria-label="Yesterday">Yesterday</button>
-        <div class="center">
-          <div class="title" id="dateTitle">Today</div>
-          <div class="sub" id="dateSub"></div>
-        </div>
-        <button class="nav" id="btnToday" aria-label="Today">Today</button>
-      </div>
+<header class="top">
+  <div class="tickerWrap">
+    <div class="holoLine"></div>
+    <div class="ticker" id="ticker">I believe: — · Evidence: — · --:--</div>
+    <div class="holoLine"></div>
+  </div>
 
-      <div class="row">
-        <button class="pill" id="btnBelief" aria-label="Belief">
-          <span class="pillK">BELIEF</span>
-          <span class="pillV" id="beliefText">—</span>
-        </button>
-        <button class="ghost" id="btnReview" aria-label="Review">Review</button>
-        <button class="ghost" id="btnDiag" aria-label="Diagnostics">Diag</button>
-      </div>
-    </header>
+  <div class="tabs">
+    <button id="tabConsole" class="tab active">Console</button>
+    <button id="tabLedger" class="tab">Ledger</button>
+    <button id="btnExport" class="tab ghost">Export</button>
+    <button id="btnImport" class="tab ghost">Import</button>
+  </div>
 
-    <section class="card">
-      <div class="k">Decision Events</div>
-      <div class="grid3" id="eventGrid">
-        <button class="btn" data-evt="DECISION_MADE">DECISION<br/>MADE</button>
-        <button class="btn" data-evt="DECISION_DEFERRED">DECISION<br/>DEFERRED</button>
-        <button class="btn" data-evt="DECISION_AVOIDED">DECISION<br/>AVOIDED</button>
-        <button class="btn" data-evt="EXECUTION">EXECUTION</button>
-        <button class="btn" data-evt="CONTEXT_SHIFT">CONTEXT<br/>SHIFT</button>
-        <button class="btn bad" data-evt="DRAG">DRAG</button>
-      </div>
+  <div class="row slim">
+    <div id="status" class="status"></div>
+    <div id="meta" class="muted"></div>
+  </div>
+</header>
 
-      <div class="row">
-        <button class="ctrl" id="btnUndo">Undo</button>
-        <button class="ctrl primary" id="btnFinalize">Finalize</button>
-      </div>
+<section id="viewConsole">
+  <div class="row">
+    <div>
+      <div class="title">Execution Console</div>
+      <div class="sub">Drag ↑ = priority. % only for real movement.</div>
+    </div>
+    <button id="btnAddGoal" class="pill">+ Goal</button>
+    <button id="btnResetAll">Reset</button>
+  </div>
 
-      <div class="row slim">
-        <div class="status" id="statusText" aria-live="polite"></div>
-        <div class="caps" id="capsText"></div>
-      </div>
-    </section>
+  <div id="goals" class="goals"></div>
+</section>
 
-    <section class="card">
-      <div class="k">Close</div>
-      <div class="box">
-        <div class="line"><span class="lab">WHAT MOVED FORWARD</span><span class="val" id="lineMoved">—</span></div>
-        <div class="line"><span class="lab">WHAT CREATED DRAG</span><span class="val" id="lineDrag">—</span></div>
-        <div class="line"><span class="lab">NEXT DECISION</span><span class="val" id="lineNext">—</span></div>
-      </div>
-      <div class="hint" id="lockHint"></div>
-    </section>
-  </main>
+<section id="viewLedger" class="hidden">
 
-  <!-- REVIEW -->
-  <div class="overlay hidden" id="ovReview">
-    <div class="sheet" role="dialog" aria-modal="true">
-      <div class="row">
-        <div class="sheetTitle">Review · last 7 finalized</div>
-        <button class="ghost" id="btnCloseReview">Close</button>
-      </div>
-      <div class="box">
-        <div class="line"><span class="lab">MOVED</span><span class="val" id="rMoved">—</span></div>
-        <div class="line"><span class="lab">DRAG</span><span class="val" id="rDrag">—</span></div>
-        <div class="line"><span class="lab">NEXT</span><span class="val" id="rNext">—</span></div>
-      </div>
-      <div class="hint">No charts. No guilt. Just closure.</div>
+  <div class="row">
+    <button id="btnYesterday">Yesterday</button>
+    <div id="dateLabel" class="center"></div>
+    <button id="btnToday">Today</button>
+  </div>
+
+  <div class="card">
+    <div class="k">Decision Events</div>
+    <div class="grid3" id="eventGrid"></div>
+    <div class="row">
+      <button id="btnUndo">Undo</button>
+      <button id="btnFinalize" class="pill">Finalize</button>
+    </div>
+    <div id="ledgerStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="k">Close</div>
+    <div class="box">
+      <div class="line"><span>Moved</span><span id="lineMoved"></span></div>
+      <div class="line"><span>Drag</span><span id="lineDrag"></span></div>
+      <div class="line"><span>Next</span><span id="lineNext"></span></div>
     </div>
   </div>
 
-  <!-- BELIEF -->
-  <div class="overlay hidden" id="ovBelief">
-    <div class="sheet" role="dialog" aria-modal="true">
-      <div class="row">
-        <div class="sheetTitle">Belief (tap-only)</div>
-        <button class="ghost" id="btnCloseBelief">Close</button>
-      </div>
-
-      <div class="hint tight">Pick ONE driver you believe matters most. Update rarely.</div>
-
-      <div class="grid2" id="beliefGrid">
-        <button class="btn" data-belief="EXECUTION">EXECUTION</button>
-        <button class="btn" data-belief="ENVIRONMENT">ENVIRONMENT</button>
-        <button class="btn" data-belief="ENERGY">ENERGY</button>
-        <button class="btn" data-belief="CLARITY">CLARITY</button>
-      </div>
-
-      <div class="k" style="margin-top:14px;">Evidence update</div>
-      <div class="grid1" id="evidenceGrid">
-        <button class="btn" data-evidence="STRONGER">Stronger than expected</button>
-        <button class="btn" data-evidence="SAME">About the same</button>
-        <button class="btn" data-evidence="WEAKER">Weaker than expected</button>
-      </div>
-
-      <div class="hint">Evidence taps log an update. They do not alter past days.</div>
-    </div>
+  <div class="row">
+    <button id="btnReview">Review</button>
+    <button id="btnDiag">Diagnostic</button>
   </div>
 
-  <!-- DIAG -->
-  <div class="overlay hidden" id="ovDiag">
-    <div class="sheet" role="dialog" aria-modal="true">
-      <div class="row">
-        <div class="sheetTitle">Diagnostics</div>
-        <button class="ghost" id="btnCloseDiag">Close</button>
-      </div>
+</section>
 
-      <pre class="pre" id="diagText"></pre>
-
-      <div class="row" style="margin-top:12px;">
-        <button class="ctrl danger" id="btnResetToday">Reset for Today (wipe)</button>
-      </div>
-
-      <div class="hint">
-        Reset wipes only this app’s local storage and restarts from today with empty data.
-      </div>
-    </div>
-  </div>
-
-  <script src="app.js"></script>
+<script src="app.js"></script>
+</main>
 </body>
 </html>
