@@ -2,81 +2,173 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
   <title>Personal OS</title>
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-<main class="app">
+  <main class="app">
 
-<header class="top">
-  <div class="tickerWrap">
-    <div class="holoLine"></div>
-    <div class="ticker" id="ticker">I believe: — · Evidence: — · --:--</div>
-    <div class="holoLine"></div>
-  </div>
+    <header class="top">
+      <div class="tickerWrap" aria-hidden="true">
+        <div class="holoLine"></div>
+        <div class="ticker" id="ticker">I believe: — · Evidence: — · --:--</div>
+        <div class="holoLine"></div>
+      </div>
 
-  <div class="tabs">
-    <button id="tabConsole" class="tab active">Console</button>
-    <button id="tabLedger" class="tab">Ledger</button>
-    <button id="btnExport" class="tab ghost">Export</button>
-    <button id="btnImport" class="tab ghost">Import</button>
-  </div>
+      <div class="row">
+        <div class="titleBlock">
+          <div class="title">Personal OS</div>
+          <div class="sub">Tap truth. Close day. No streaks. No guilt.</div>
+        </div>
 
-  <div class="row slim">
-    <div id="status" class="status"></div>
-    <div id="meta" class="muted"></div>
-  </div>
-</header>
+        <button id="btnDiag" class="ghost">Diagnostic</button>
+        <button id="btnExport" class="ghost">Export</button>
+        <button id="btnImport" class="ghost">Import</button>
+      </div>
 
-<section id="viewConsole">
-  <div class="row">
-    <div>
-      <div class="title">Execution Console</div>
-      <div class="sub">Drag ↑ = priority. % only for real movement.</div>
+      <div class="row slim">
+        <div class="mascot" id="mascot" aria-live="polite">Ready.</div>
+        <div class="muted" id="meta"></div>
+      </div>
+    </header>
+
+    <!-- MAIN WINDOW -->
+    <section id="mainView">
+
+      <!-- EXECUTION CONSOLE -->
+      <section class="card">
+        <div class="k">Execution Console</div>
+
+        <div class="chips">
+          <div class="chipLabel">Add goal</div>
+          <div class="chipRow" id="goalChips"></div>
+          <button id="btnAddGoalCustom" class="chip ghost">Custom…</button>
+        </div>
+
+        <div class="hint">Drag ↑ = higher priority. % only when reality moved.</div>
+
+        <div id="goals" class="goals"></div>
+      </section>
+
+      <!-- DECISION LEDGER -->
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="k">Decision Ledger</div>
+            <div class="sub" id="dateLabel">—</div>
+          </div>
+          <button id="btnResetToday" class="ghost">Reset Today</button>
+        </div>
+
+        <div class="grid3" id="ledgerButtons"></div>
+
+        <div class="row">
+          <button id="btnUndo" class="ctrl">Undo</button>
+          <button id="btnFinalize" class="ctrl primary">Finalize</button>
+        </div>
+
+        <div class="row slim">
+          <div class="status" id="ledgerStatus"></div>
+          <div class="muted" id="caps"></div>
+        </div>
+
+        <div class="box">
+          <div class="line"><span class="lab">WHAT MOVED FORWARD</span><span class="val" id="lineMoved">—</span></div>
+          <div class="line"><span class="lab">WHAT HURT</span><span class="val" id="lineDrag">—</span></div>
+          <div class="line"><span class="lab">TOMORROW</span><span class="val" id="lineNext">—</span></div>
+        </div>
+
+        <div class="k" style="margin-top:14px;">Decision Profile</div>
+        <div class="box" id="profileBox">
+          <div class="line"><span class="lab">CLOSURE</span><span class="val" id="pClosure">—</span></div>
+          <div class="line"><span class="lab">DECIDE → DO</span><span class="val" id="pDecideDo">—</span></div>
+          <div class="line"><span class="lab">AVOIDANCE</span><span class="val" id="pAvoid">—</span></div>
+          <div class="line"><span class="lab">DEFERRAL</span><span class="val" id="pDefer">—</span></div>
+          <div class="line"><span class="lab">FRICTION</span><span class="val" id="pFriction">—</span></div>
+          <div class="line"><span class="lab">STRUCTURE</span><span class="val" id="pStructure">—</span></div>
+        </div>
+
+        <div class="row">
+          <button id="btnReview" class="ghost">Review (7)</button>
+        </div>
+
+        <div class="hint" id="lockHint"></div>
+      </section>
+
+    </section>
+
+    <!-- DIAGNOSTIC WINDOW (ONLY DIAGRAM) -->
+    <section id="diagView" class="hidden">
+      <section class="card">
+        <div class="row">
+          <div>
+            <div class="k">Diagnostic</div>
+            <div class="sub">Ghost You vs Presence You</div>
+          </div>
+          <button id="btnBack" class="ghost">Back</button>
+        </div>
+        <pre class="pre" id="diagOutput"></pre>
+        <div class="hint">Presence increases by closing days. Avoidance adds penalty.</div>
+      </section>
+    </section>
+
+    <!-- REVIEW -->
+    <div id="reviewSheet" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="row">
+          <div class="sheetTitle">Last 7 finalized</div>
+          <button id="btnCloseReview" class="ghost">Close</button>
+        </div>
+
+        <div class="box">
+          <div class="line"><span class="lab">MOVED</span><span class="val" id="rMoved">—</span></div>
+          <div class="line"><span class="lab">HURT</span><span class="val" id="rDrag">—</span></div>
+          <div class="line"><span class="lab">TOMORROW</span><span class="val" id="rNext">—</span></div>
+        </div>
+
+        <div class="k" style="margin-top:14px;">7-day profile</div>
+        <div class="box">
+          <div class="line"><span class="lab">STRONG</span><span class="val" id="rStrong">—</span></div>
+          <div class="line"><span class="lab">WEAK</span><span class="val" id="rWeak">—</span></div>
+        </div>
+
+        <div class="hint">No charts. Pattern only.</div>
+      </div>
     </div>
-    <button id="btnAddGoal" class="pill">+ Goal</button>
-    <button id="btnResetAll">Reset</button>
-  </div>
 
-  <div id="goals" class="goals"></div>
-</section>
-
-<section id="viewLedger" class="hidden">
-
-  <div class="row">
-    <button id="btnYesterday">Yesterday</button>
-    <div id="dateLabel" class="center"></div>
-    <button id="btnToday">Today</button>
-  </div>
-
-  <div class="card">
-    <div class="k">Decision Events</div>
-    <div class="grid3" id="eventGrid"></div>
-    <div class="row">
-      <button id="btnUndo">Undo</button>
-      <button id="btnFinalize" class="pill">Finalize</button>
+    <!-- IO -->
+    <div id="ioSheet" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="row">
+          <div class="sheetTitle" id="ioTitle">Export</div>
+          <button id="btnCloseIO" class="ghost">Close</button>
+        </div>
+        <textarea id="ioText" class="ioText" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="btnDoIO" class="ctrl primary">Done</button>
+        </div>
+        <div class="hint" id="ioHint"></div>
+      </div>
     </div>
-    <div id="ledgerStatus" class="status"></div>
-  </div>
 
-  <div class="card">
-    <div class="k">Close</div>
-    <div class="box">
-      <div class="line"><span>Moved</span><span id="lineMoved"></span></div>
-      <div class="line"><span>Drag</span><span id="lineDrag"></span></div>
-      <div class="line"><span>Next</span><span id="lineNext"></span></div>
+    <!-- Custom prompt -->
+    <div id="promptSheet" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="sheet">
+        <div class="row">
+          <div class="sheetTitle" id="promptTitle">Custom</div>
+          <button id="btnClosePrompt" class="ghost">Close</button>
+        </div>
+        <input id="promptInput" class="promptInput" placeholder="Short name"/>
+        <div class="hint">Chips are default. Custom is optional.</div>
+        <div class="row">
+          <button id="btnPromptOK" class="ctrl primary">OK</button>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <div class="row">
-    <button id="btnReview">Review</button>
-    <button id="btnDiag">Diagnostic</button>
-  </div>
+  </main>
 
-</section>
-
-<script src="app.js"></script>
-</main>
+  <script src="app.js"></script>
 </body>
 </html>
